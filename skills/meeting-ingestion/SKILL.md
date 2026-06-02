@@ -1,16 +1,36 @@
 ---
 name: meeting-ingestion
-version: 1.0.0
+version: 2.0.0
 description: |
   Ingest meeting transcripts into brain pages with attendee enrichment, entity
-  propagation, and timeline merge. A meeting is NOT fully ingested until the
-  enrich skill has processed every entity.
+  propagation, and timeline merge — AND run the full post-meeting flow: build a
+  structured notes draft (Executive Summary → Key Takeaways → Key Decisions →
+  Learnings or Useful Later → Action Items → Next Steps → Meeting Historical
+  Breakdown), review it with the
+  user before ingesting, then draft the follow-up and split out execution. A
+  meeting is NOT fully ingested until the enrich skill has processed every entity.
 triggers:
   - "meeting transcript"
   - "process this meeting"
   - "meeting notes"
   - meeting transcript received
+  - "post-meeting flow"
+  - "do the post-meeting flow"
+  - "work through this meeting"
+  - "process this meeting end to end"
+  - "review takeaways then action items then follow-up"
+  - "draft this meeting and do the follow-up flow"
+  - "review meeting notes before ingesting"
+  - "ingest this meeting"
+  - "post meeting process"
+  - "run my post meeting process"
+  - "draft the follow-up"
+  - "separate action items from next steps"
 tools:
+  - read
+  - write
+  - exec
+  - message
   - search
   - query
   - get_page
@@ -28,16 +48,50 @@ writes_to:
 # Meeting Ingestion Skill
 
 > **Filing rule:** Read `skills/_brain-filing-rules.md` before creating any new page.
+>
+> **v2.0.0 — merged skill.** This skill now covers the full post-meeting flow
+> end to end, so you only invoke ONE skill per meeting. It still does everything
+> the old meeting-ingestion did (attendee enrichment, entity propagation,
+> timeline merge, back-links) AND adds the structured-notes + review-before-ingest
+> + follow-up + execution behavior that used to live in the separate
+> `post-meeting-flow` skill.
 
 ## Contract
 
 This skill guarantees:
-- Meeting page created with attendees, summary, key decisions, action items
-- EVERY attendee gets a people page (created or updated)
-- EVERY company discussed gets entity propagation
-- Timeline entries on ALL mentioned entities (timeline merge)
-- Meeting is NOT fully ingested until enrich runs for every entity
-- Back-links created bidirectionally
+
+- A structured meeting-notes **draft** is built before any ingestion.
+- The notes begin with an `Executive Summary`, followed — in this fixed order —
+  by `Key Takeaways`, then `Key Decisions` (if present), then `Learnings or
+  Useful Later` (if present), then `Action Items`, then `Next Steps`. These
+  skim-and-act sections sit at the top.
+- The chronological `Meeting Historical Breakdown` is the last body section. If the page
+  carries a `## Timeline` block (the append-only, `<!-- timeline -->`-marked
+  entity timeline that tools edit deterministically), it stays at the very
+  bottom, after the Meeting Historical Breakdown.
+- `Action Items` (concrete things the user can directly do) are kept distinct
+  from `Next Steps` (directional moves that aren't yet atomic tasks).
+- `Action Items` ALSO includes a scan for **promises/commitments the user made to
+  others** in the meeting; each such promise becomes its own action item, tagged
+  `(promise)` so it's visually distinct from ordinary action items.
+- The `Key Decisions` and `Learnings or Useful Later` sections are both optional
+  — omit either entirely if nothing qualifies.
+- The raw transcript is preserved in G-Brain via
+  `gbrain files upload-raw <file> --page meetings/<slug> --type transcript`, which
+  creates a git-tracked `.raw/` sidecar next to the meeting page.
+- The raw transcript is NOT a standalone body section. Provenance is a
+  `raw_transcript:` pointer in the page **frontmatter** (a brain-relative path
+  into the `.raw/` sidecar), optionally also a link under `See Also`. Never point
+  at an inbound media temp path (`.openclaw/media/inbound/...`).
+- The draft is **shown to the user for review before ingestion happens**, and the
+  agent iterates until the user is satisfied. Ingestion happens only after approval.
+- EVERY attendee gets a people page (created or updated).
+- EVERY company/project discussed gets entity propagation.
+- Timeline entries on ALL mentioned entities (timeline merge).
+- A meeting is NOT fully ingested until enrich runs for every entity.
+- Back-links created bidirectionally.
+- The follow-up draft and the execution split are produced **separately, after**
+  the notes are clean — never embedded inside the meeting-notes file.
 
 > **Convention:** See `skills/conventions/quality.md` for Iron Law back-linking.
 
@@ -46,79 +100,215 @@ the meeting page. An unlinked mention is a broken brain.
 
 ## Phases
 
+> Phases 1–4 produce and refine the draft. Do NOT ingest into G-Brain until the
+> user approves (Phase 4). Phases 5–8 are the ingestion + enrichment work.
+> Phases 9–10 are the follow-up and execution handoff.
+
 ### Phase 1: Parse the transcript
 
 Extract from the transcript:
-- Attendees (names, roles if available)
+- Attendees (names, roles if available). **Speaker labels (A/B) and ASR names are
+  unreliable — confirm who is who with the user when it is ambiguous before
+  attributing quotes or actions.**
 - Date, time, duration
 - Key topics discussed
-- Decisions made
-- Action items with owners
-- Companies and projects mentioned
+- Decisions, action items (with owners), and **promises/commitments the user
+  made to others** in the meeting (e.g. "I'll send you X", "I'll intro you to Y")
+- Companies, projects, programs, and people mentioned
 
-### Phase 2: Create meeting page
+### Phase 2: Preserve the raw transcript (no body section)
+
+```bash
+gbrain files upload-raw <file> --page meetings/<slug> --type transcript
+```
+
+For normal text transcripts this produces a git-tracked `.raw/` sidecar dir next
+to the meeting page. Record it ONLY as a `raw_transcript:` frontmatter pointer
+to that `.raw/` path (optionally also a `See Also` link). Never paste transcript
+content into the page body, and never leave the only reference pointing at an
+inbound media temp path.
+
+### Phase 3: Build the meeting-notes draft (do NOT ingest yet)
+
+Write the draft to `/home/supe/brain/meetings/<slug>.md` with frontmatter
+(`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`) and this
+fixed body order:
 
 ```markdown
 # {Meeting Title} — {Date}
 
-**Attendees:** {list with links to people pages}
+**Attendees:** {list with [links](people/slug) to people pages}
 **Date:** {YYYY-MM-DD}
-**Duration:** {if available}
+**Format:** {phone/in-person/etc., if known}
 
-## Summary
-{3-5 bullet key outcomes}
+## Executive Summary
+{tight skim-first paragraph: what it was about, what mattered, what changed/decided}
+
+## Key Takeaways
+{the sharpest strategic points — signal, not transcript replay}
 
 ## Key Decisions
-{Decisions with context}
+{optional — concrete decisions/agreements reached, with context. Omit if none.}
+
+## Learnings or Useful Later
+{optional — a reusable lesson, mental model, tactic, intro, or warning worth
+remembering later. Omit the section entirely if nothing qualifies.}
 
 ## Action Items
-{Tasks with owners and deadlines}
+{concrete things the user can directly do, with owners/deadlines.
+ALSO scan the transcript for promises/commitments the USER made to others in the
+meeting (e.g. "I'll send you X", "I'll intro you to Y", "I'll look into Z") and
+add each as its own action item, tagged `(promise)` at the end so it stands out —
+e.g. "- Send Ben the list of events I end up attending (promise)".}
 
-## Discussion Notes
-{Structured notes by topic}
+## Next Steps
+{directional moves that matter but aren't yet atomic tasks}
+
+## Meeting Historical Breakdown
+### 1. {segment label}
+- {factual bullets, in the order the conversation unfolded — not transcript sludge}
+### 2. {segment label}
+- ...
+
+<!-- timeline -->
+
+## Timeline
+- {YYYY-MM-DD} — {one-line dated summary}
+
+## See Also
+- {links to attendees, companies, programs, places}
+- Raw transcript: `meetings/<slug>.raw/<file>`
 ```
 
-### Phase 3: Attendee enrichment (MANDATORY)
+### Phase 4: Review loop with the user (MANDATORY — before ingestion)
+
+Show the user the current draft and iterate until it's right. **This is not
+optional, and it happens before any G-Brain ingestion.**
+
+When showing the notes, attach the **actual canonical brain page file at its real
+in-brain path** (`/home/supe/brain/meetings/<slug>.md`) — the same file being
+edited in place, the same path on every iteration. Never attach a temp copy, a
+regenerated duplicate, or an inbound-media path. If the surface can't attach,
+quote the relevant sections and give that same path.
+
+Stay in the loop until the user is satisfied: tighten takeaways, fix missing
+action items, correct names/links/people/companies (diarization is unreliable —
+expect attribution fixes), trim overreach, improve the summary and the
+historical-breakdown ordering. Only proceed once the user approves.
+
+### Phase 5: Ingest the approved meeting into G-Brain
+
+**Editing the `.md` on disk is NOT ingestion.** The engine (what search/retrieval
+serves) is a separate store; a working-tree edit doesn't reach it. Push the
+approved file into the engine explicitly:
+
+```bash
+gbrain capture --file /home/supe/brain/meetings/<slug>.md --slug meetings/<slug> --type meeting
+```
+
+Then verify the engine matches the reviewed file before declaring it ingested:
+
+```bash
+gbrain get meetings/<slug> | grep -E '^## '   # headings must match the file
+```
+
+If headings or `raw_transcript` differ, re-ingest until they match. Do not trust
+the on-disk file as proof of ingestion.
+
+### Phase 6: Attendee enrichment (MANDATORY)
 
 For EACH attendee:
 1. `gbrain search "{name}"` — does a people page exist?
-2. If NO → create via enrich skill (this is mandatory, not optional)
+2. If NO → create via enrich skill (mandatory, not optional)
 3. If YES → update compiled truth with meeting context
-4. Add timeline entry on the person's page:
+4. Add a timeline entry on the person's page:
    `gbrain timeline-add <person-slug> <date> "Attended <meeting-title>"`
 
-**Note (v0.10.1):** Once the meeting page is written via `gbrain put`, the
-auto-link post-hook automatically creates `attended` links from the meeting
-to each attendee whose page is referenced as `[Name](people/slug)`. You don't
-need to call `gbrain link` for attendees. You DO still need `gbrain timeline-add`
-for dated events (auto-link only handles links, not timeline entries).
+**Note:** Once the meeting page is ingested, the auto-link post-hook creates
+`attended` links from the meeting to each attendee referenced as
+`[Name](people/slug)`. You don't need `gbrain link` for attendees. You DO still
+need `gbrain timeline-add` for dated events (auto-link handles links, not timeline
+entries).
 
-### Phase 4: Entity propagation (MANDATORY)
+### Phase 7: Entity propagation (MANDATORY)
 
-For each company, project, or concept discussed:
-1. Check brain for existing page
+For each company, project, program, place, or concept discussed:
+1. Check the brain for an existing page
 2. Create/update as needed
-3. Add timeline entry referencing the meeting
-4. Back-link from entity page to meeting page
+3. Add a timeline entry referencing the meeting
+4. Back-link from the entity page to the meeting page
 
-### Phase 5: Timeline merge
+### Phase 8: Timeline merge
 
 The same event appears on ALL mentioned entities' timelines. If Alice met Bob at
 Acme Corp, the event goes on Alice's page, Bob's page, AND Acme Corp's page.
 
-### Phase 6: Sync
+### Phase 9: Draft the follow-up (after the notes are clean)
 
-`gbrain sync` to update the index.
+Only now draft the follow-up message — **separately, not inside the notes file.**
+A good follow-up usually: thanks the person, reflects the most useful takeaway,
+mentions 1–2 specific points, and includes a short ask if needed. Tone: concise,
+human, not overpolished, no fake gratitude. Draft it for the user to send; don't
+auto-send.
+
+### Phase 10: Execution / planner handoff
+
+For every concrete item, decide:
+- **Do now** — truly possible in under five minutes
+- **Add to planner** — a real task (concrete verb, bounded scope, actual next move)
+
+Surface these to the user for their own planner. **Per user preference, do NOT
+auto-write tasks into the brain (no `daily-task-manager` brain-page writes) unless
+the user explicitly asks.** Execution advice must be real tasks, never vague
+targets like "get to 15 interviews."
 
 ## Output Format
 
-Meeting page created. Report: "Meeting ingested: {N} attendees enriched, {N} entities
-updated, {N} action items captured."
+The meeting page's fixed body order (raw transcript lives only in the `.raw/`
+sidecar, referenced by the `raw_transcript:` frontmatter pointer — never a body
+section):
+
+```
+1. Executive Summary
+2. Key Takeaways
+3. Key Decisions               (optional — omit if none)
+4. Learnings or Useful Later   (optional — omit if nothing qualifies)
+5. Action Items
+6. Next Steps
+7. Meeting Historical Breakdown (chronological segments with bullets)
+8. ## Timeline                 (only if present: the append-only
+                                <!-- timeline -->-marked block; stays dead last)
+```
+
+Final report after ingestion + enrichment:
+"Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items
+captured." Then deliver the follow-up draft and the execution split (Phases 9–10)
+as separate chat output.
 
 ## Anti-Patterns
 
+- Blending the phases into one blob instead of running them in order
+- Treating G-Brain ingestion as a separate, optional step after approval rather
+  than part of this flow
+- Running ingestion before the user has reviewed the notes
+- Skipping the executive summary or the chronological historical breakdown
+- Writing the historical breakdown as transcript sludge instead of structured
+  segments with bullets
+- Losing the distinction between `Action Items` and `Next Steps`
+- Dropping promises the user made to others instead of surfacing each as its own
+  `(promise)`-tagged action item
+- Treating generic outcome targets as a canonical notes section
+- Adding a standalone `## Transcript` body section instead of a `raw_transcript:`
+  frontmatter pointer to the `.raw/` sidecar; pasting transcript into the body
+- Putting the narrative `Meeting Historical Breakdown` below the append-only `## Timeline`
+  block
+- Embedding the follow-up draft or the execution split inside the meeting-notes file
+- Drafting the follow-up before the meeting page is clean
+- Treating a filesystem `.md` edit as ingestion — the engine is a separate store;
+  ingest via `gbrain capture`/`put`, then verify with `gbrain get`
 - Creating the meeting page without enriching attendees
 - Skipping entity propagation ("I'll do that later")
 - Not merging timelines across all mentioned entities
 - Creating attendee stubs without meaningful content
 - Filing meeting pages without cross-linking to all participants
+- Auto-writing tasks into the brain task manager against user preference

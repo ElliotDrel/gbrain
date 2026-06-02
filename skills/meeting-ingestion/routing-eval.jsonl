@@ -1,0 +1,6 @@
+{"intent":"do the post-meeting flow for this meeting","expected_skill":"meeting-ingestion"}
+{"intent":"work through this meeting end to end and update gbrain as part of it","expected_skill":"meeting-ingestion"}
+{"intent":"review takeaways, action items, and then draft the follow-up","expected_skill":"meeting-ingestion"}
+{"intent":"ingest this meeting and run my post meeting process","expected_skill":"meeting-ingestion"}
+{"intent":"separate action items from next steps after this meeting","expected_skill":"meeting-ingestion"}
+{"intent":"process this meeting transcript","expected_skill":"meeting-ingestion"}
