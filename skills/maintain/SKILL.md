@@ -249,7 +249,10 @@ Spot-check pages for missing `[Source: ...]` citations:
 
 ### Tag consistency
 Inconsistent tagging (e.g., "vc" vs "venture-capital", "ai" vs "artificial-intelligence").
-- Standardize to the most common variant using gbrain tag operations
+- `gbrain tags audit` — cluster mechanical duplicates (case/separator/plural/1-char typo) and print ready-to-run merge commands. Safe to auto-apply.
+- `gbrain tags merge <from> <to> --apply` — repoint every page using `<from>` to `<to>`; rewrites frontmatter AND reconciles the engine (removeTag + addTag), then commit + push.
+- `gbrain tags list` — full vocabulary + counts; use it (and judgment) for **semantic** synonyms, which are not machine-detectable. Flag semantic merges to the user before applying.
+- See `skills/conventions/tagging.md` for the full convention (prefer-existing, 3-6 tags/page, anti-patterns).
 
 ### Graph population (v0.10.3+)
 
