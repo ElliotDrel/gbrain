@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
-import { runBunLinkUpgrade } from '../src/commands/upgrade-bunlink.ts';
+import { printBunLinkBriefing, runBunLinkUpgrade } from '../src/commands/upgrade-bunlink.ts';
 
 // Isolate sandbox repos from the developer's global/system git config
 // (autocrlf, commit signing, pull.rebase, etc.). Pointing GIT_CONFIG_GLOBAL /
@@ -36,6 +36,7 @@ function commitFile(repo: string, file: string, content: string, msg: string) {
 let tmp: string;
 let upstreamRepo: string;  // plays "origin"
 let install: string;       // plays the bun-link clone
+const GIT_SANDBOX_TIMEOUT = 20_000;
 
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'gbrain-upg-'));
@@ -54,13 +55,13 @@ describe('runBunLinkUpgrade statuses', () => {
   test('already current', () => {
     const r = runBunLinkUpgrade(install, { id: 'test1', backupBase: join(tmp, 'bk') });
     expect(r.status).toBe('current');
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('no upstream tracking branch', () => {
     git(install, 'checkout', '-b', 'detached-feature');
     const r = runBunLinkUpgrade(install, { id: 'test2', backupBase: join(tmp, 'bk') });
     expect(r.status).toBe('no_upstream');
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('dirty tree aborts before touching anything', () => {
     commitFile(upstreamRepo, 'a.txt', 'line1 upstream\nline2\nline3\n', 'upstream change');
@@ -69,7 +70,7 @@ describe('runBunLinkUpgrade statuses', () => {
     expect(r.status).toBe('dirty');
     // uncommitted work untouched
     expect(readFileSync(join(install, 'a.txt'), 'utf-8')).toBe('uncommitted local mess\n');
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 });
 
 describe('runBunLinkUpgrade rebase', () => {
@@ -81,7 +82,7 @@ describe('runBunLinkUpgrade rebase', () => {
     expect(r.replayed).toBe(0);
     expect(git(install, 'rev-parse', 'HEAD')).toBe(git(install, 'rev-parse', 'origin/master'));
     expect(readFileSync(join(install, 'a.txt'), 'utf-8')).toContain('line1 upstream');
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('non-overlapping patch replays cleanly on top', () => {
     commitFile(install, 'patch.txt', 'my patch\n', 'patch: add patch.txt');
@@ -96,7 +97,7 @@ describe('runBunLinkUpgrade rebase', () => {
     expect(existsSync(join(install, 'b.txt'))).toBe(true);
     // patch sits ON TOP of upstream
     expect(git(install, 'rev-parse', 'HEAD~1')).toBe(git(install, 'rev-parse', 'origin/master'));
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('same-line conflict: upstream wins, patched version backed up, manifest written', () => {
     commitFile(install, 'a.txt', 'line1 PATCHED\nline2\nline3\n', 'patch: change line1');
@@ -123,10 +124,19 @@ describe('runBunLinkUpgrade rebase', () => {
     // repo is NOT left mid-rebase
     expect(existsSync(join(install, '.git', 'rebase-merge'))).toBe(false);
     expect(existsSync(join(install, '.git', 'rebase-apply'))).toBe(false);
-  });
+  }, GIT_SANDBOX_TIMEOUT);
+
+  test('conflict backup preserves the exact patched blob bytes', () => {
+    commitFile(install, 'a.txt', 'line1 PATCHED', 'patch: exact bytes');
+    commitFile(upstreamRepo, 'a.txt', 'line1 UPSTREAM', 'upstream: exact bytes');
+    const backupBase = join(tmp, 'bk');
+    const r = runBunLinkUpgrade(install, { id: 'bytes1', backupBase });
+    expect(r.status).toBe('upgraded_with_conflicts');
+    expect(readFileSync(join(backupBase, 'bytes1', 'a.txt'), 'utf-8')).toBe('line1 PATCHED');
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('patch entirely swallowed by upstream-wins: commit skipped, rebase completes', () => {
-    // Patch ONLY touches a.txt line1; upstream also touches it → after
+    // Patch ONLY touches a.txt line1; upstream also touches it; after
     // upstream-wins the patch commit is empty and must be skipped.
     commitFile(install, 'a.txt', 'line1 PATCHED\nline2\nline3\n', 'patch: only line1');
     commitFile(upstreamRepo, 'a.txt', 'line1 UPSTREAM\nline2\nline3\n', 'upstream: line1');
@@ -134,7 +144,7 @@ describe('runBunLinkUpgrade rebase', () => {
     expect(r.status).toBe('upgraded_with_conflicts');
     expect(r.replayed).toBe(0); // nothing of the patch survived
     expect(git(install, 'rev-parse', 'HEAD')).toBe(git(install, 'rev-parse', 'origin/master'));
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('upstream deleted a file the patch modified: upstream wins (file deleted), backup kept', () => {
     commitFile(install, 'a.txt', 'line1 PATCHED\nline2\nline3\n', 'patch: modify a.txt');
@@ -145,7 +155,7 @@ describe('runBunLinkUpgrade rebase', () => {
     expect(r.status).toBe('upgraded_with_conflicts');
     expect(existsSync(join(install, 'a.txt'))).toBe(false); // upstream's delete won
     expect(readFileSync(join(backupBase, 'del1', 'a.txt'), 'utf-8')).toContain('line1 PATCHED');
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('multiple patch commits, mixed clean and conflicting', () => {
     commitFile(install, 'patch.txt', 'standalone patch\n', 'patch: clean one');
@@ -157,7 +167,7 @@ describe('runBunLinkUpgrade rebase', () => {
     expect(r.conflicts).toHaveLength(1);   // the conflicting one got upstream-wins'd
     expect(existsSync(join(install, 'patch.txt'))).toBe(true);
     expect(readFileSync(join(install, 'a.txt'), 'utf-8')).toContain('line1 UPSTREAM');
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 
   test('backup ref is always created on any non-trivial upgrade', () => {
     commitFile(upstreamRepo, 'a.txt', 'line1 up\nline2\nline3\n', 'upstream');
@@ -165,7 +175,7 @@ describe('runBunLinkUpgrade rebase', () => {
     expect(r.backupRef).toBe('backup/pre-upgrade-ref1');
     // ref exists and points at the pre-upgrade HEAD
     expect(() => git(install, 'rev-parse', '--verify', 'backup/pre-upgrade-ref1')).not.toThrow();
-  });
+  }, GIT_SANDBOX_TIMEOUT);
 });
 
 describe('upgrade.ts bun-link wiring (source analysis)', () => {
@@ -181,6 +191,7 @@ describe('upgrade.ts bun-link wiring (source analysis)', () => {
 
   test('verify gate: typecheck runs after bun install on bun-link path', () => {
     expect(source).toContain("['run', 'typecheck']");
+    expect(source).toContain("['--version']");
   });
 
   test('verify failure rolls back hard to the backup ref', () => {
@@ -189,5 +200,38 @@ describe('upgrade.ts bun-link wiring (source analysis)', () => {
 
   test('briefing printer exists and is invoked', () => {
     expect(source).toContain('printBunLinkBriefing(');
+  });
+});
+
+describe('printBunLinkBriefing', () => {
+  test('conflict briefing tells the operator what happened and where backups are', () => {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    try {
+      console.log = (...args: unknown[]) => { lines.push(args.join(' ')); };
+      printBunLinkBriefing({
+        status: 'upgraded_with_conflicts',
+        upstream: 'origin/master',
+        pulled: 3,
+        replayed: 1,
+        backupRef: 'backup/pre-upgrade-20260603-120000',
+        backupDir: '/home/e/.gbrain/upgrade-backups/20260603-120000',
+        conflicts: [{
+          file: 'src/example.ts',
+          commit: 'abc123',
+          subject: 'patch: local behavior',
+          backupPath: '/home/e/.gbrain/upgrade-backups/20260603-120000/src/example.ts',
+        }],
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join('\n');
+    expect(output).toContain('Pulled 3 upstream commit(s); 1 local patch(es) replayed cleanly.');
+    expect(output).toContain('upstream version kept');
+    expect(output).toContain('/home/e/.gbrain/upgrade-backups/20260603-120000');
+    expect(output).toContain('backup/pre-upgrade-20260603-120000');
+    expect(output).toContain('upgrade-resolve skill');
   });
 });
