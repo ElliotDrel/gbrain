@@ -38,9 +38,10 @@ export async function runUpgrade(args: string[]) {
           execFileSync('bun', ['install'], { cwd: linkInfo.repoRoot, stdio: 'inherit', timeout: 120_000 });
           // Verify gate: a half-applied replay must never ship silently.
           execFileSync('bun', ['run', 'typecheck'], { cwd: linkInfo.repoRoot, stdio: 'inherit', timeout: 600_000 });
+          execFileSync('gbrain', ['--version'], { cwd: linkInfo.repoRoot, stdio: 'inherit', timeout: 10_000 });
           upgraded = true;
         } catch (e) {
-          console.error('Verify gate failed — rolling back to pre-upgrade state.');
+          console.error('Verify gate failed - rolling back to pre-upgrade state.');
           console.error(e instanceof Error ? e.message : String(e));
           try {
             execFileSync('git', ['-C', linkInfo.repoRoot, 'reset', '--hard', result.backupRef!], { stdio: 'inherit', timeout: 30_000 });

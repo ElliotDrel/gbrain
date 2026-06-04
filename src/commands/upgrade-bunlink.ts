@@ -29,6 +29,14 @@ function git(repoRoot: string, ...args: string[]): string {
   }).trim();
 }
 
+function gitBlob(repoRoot: string, revPath: string): Buffer {
+  return execFileSync('git', ['-C', repoRoot, 'show', revPath], {
+    timeout: 120_000,
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, GIT_EDITOR: 'true' },
+  });
+}
+
 function rebaseInProgress(repoRoot: string): boolean {
   return existsSync(join(repoRoot, '.git', 'rebase-merge'))
     || existsSync(join(repoRoot, '.git', 'rebase-apply'));
@@ -94,7 +102,7 @@ export function runBunLinkUpgrade(
   const backupRef = `backup/pre-upgrade-${id}`;
   git(repoRoot, 'branch', backupRef);
   const backupDir = join(
-    opts.backupBase ?? join(process.env.HOME || '', '.gbrain', 'upgrade-backups'),
+    opts.backupBase ?? join(process.env.HOME || process.env.USERPROFILE || '', '.gbrain', 'upgrade-backups'),
     id,
   );
 
@@ -112,7 +120,7 @@ export function runBunLinkUpgrade(
         const files = git(repoRoot, 'diff', '--name-only', '--diff-filter=U')
           .split('\n').filter(Boolean);
         if (files.length === 0) {
-          throw new Error('rebase stopped without content conflicts (unsupported state — resolve manually)');
+          throw new Error('rebase stopped without content conflicts (unsupported state - resolve manually)');
         }
         const commit = git(repoRoot, 'rev-parse', 'REBASE_HEAD');
         const subject = git(repoRoot, 'log', '-1', '--format=%s', commit);
@@ -120,26 +128,26 @@ export function runBunLinkUpgrade(
           // 1. Preserve the pre-upgrade (patched) version BEFORE overwriting.
           let backupPath: string | null = null;
           try {
-            const patched = git(repoRoot, 'show', `${backupRef}:${file}`);
+            const patched = gitBlob(repoRoot, `${backupRef}:${file}`);
             backupPath = join(backupDir, file);
             mkdirSync(dirname(backupPath), { recursive: true });
-            writeFileSync(backupPath, patched + '\n');
+            writeFileSync(backupPath, patched);
           } catch {
             backupPath = null; // path had no pre-upgrade version (e.g. rename)
           }
           // 2. Upstream wins. NOTE: during a rebase, --ours = the upstream
-          // branch being rebased onto (REVERSE of merge semantics) — intended.
+          // branch being rebased onto (REVERSE of merge semantics) - intended.
           try {
             git(repoRoot, 'checkout', '--ours', '--', file);
             git(repoRoot, 'add', '--', file);
           } catch {
-            // Upstream has no version of this path (upstream deleted it) →
+            // Upstream has no version of this path (upstream deleted it), so
             // upstream-wins means the file goes away.
             git(repoRoot, 'rm', '--quiet', '--ignore-unmatch', '--', file);
           }
           conflicts.push({ file, commit, subject, backupPath });
         }
-        // 3. Continue — or skip if upstream-wins emptied the patch commit.
+        // 3. Continue, or skip if upstream-wins emptied the patch commit.
         let hasStagedChanges = false;
         try {
           git(repoRoot, 'diff', '--cached', '--quiet');
@@ -150,7 +158,7 @@ export function runBunLinkUpgrade(
           git(repoRoot, 'rebase', hasStagedChanges ? '--continue' : '--skip');
         } catch {
           if (!rebaseInProgress(repoRoot)) throw new Error('rebase --continue failed in an unexpected way');
-          // Next patch commit conflicted — the loop handles it.
+          // Next patch commit conflicted; the loop handles it.
         }
       }
     }
@@ -205,7 +213,7 @@ export function printBunLinkBriefing(r: BunLinkUpgradeResult): void {
     case 'upgraded_with_conflicts': {
       console.log(`Pulled ${r.pulled} upstream commit(s); ${r.replayed} local patch(es) replayed cleanly.`);
       console.log('');
-      console.log(`CONFLICTS — upstream version kept for ${r.conflicts!.length} file(s):`);
+      console.log(`CONFLICTS - upstream version kept for ${r.conflicts!.length} file(s):`);
       for (const c of r.conflicts!) {
         console.log(`  ${c.file}  (patch: "${c.subject}")`);
       }
