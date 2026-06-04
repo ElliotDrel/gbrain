@@ -35,6 +35,12 @@ unattended.
    file for the user with the three reference points and STOP for that file.
 4. **Verify before declaring done.** Typecheck must pass; failing means revert
    your re-application and flag.
+5. **Classify before re-applying (PATCH.md Section A vs B).** Every conflicted
+   file maps to a `PATCH.md` entry that is either a **Permanent Customization**
+   (Section A — always re-apply) or an **Ephemeral Bug Fix** (Section B — carry
+   only until upstream fixes it). A bug fix that upstream has since fixed MUST be
+   **dropped, not re-applied**: re-applying creates two conflicting solutions to
+   one problem, and upstream's fix is authoritative. See step 3.
 
 ## Workflow
 
@@ -62,12 +68,20 @@ For each approved file, gather the three reference points:
   How to recreate* fields). Also `git -C <repoRoot> show <commit>` for the
   original patch diff if more context helps.
 
-Rewrite `<repoRoot>/<file>` so the patch's intent holds on the new upstream
-code. If intent and upstream now genuinely collide (upstream implemented the
-same thing differently, or removed the surface the patch modified), do NOT
-force it — flag per Hard Rule 3. If upstream absorbed the patch (the intent is
-already satisfied), skip the file and mark the PATCH.md entry
-**Status: retired (upstreamed)**.
+**First, classify the file via its `PATCH.md` entry (Section A or B):**
+
+- **Section B — Ephemeral Bug Fix:** run the entry's **Drop-when** check against
+  the new upstream code. If upstream now fixes the bug → **DROP it: do NOT
+  re-apply, skip the file, and mark the entry `Status: retired (upstreamed vX)`.**
+  Trust upstream's fix. If upstream has NOT fixed it → re-apply the intent (below).
+- **Section A — Permanent Customization:** always re-apply the intent (below).
+
+**To re-apply:** rewrite `<repoRoot>/<file>` so the patch's intent holds on the
+new upstream code. If intent and upstream now genuinely collide (upstream
+implemented the same thing differently, or removed the surface the patch
+modified), do NOT force it — flag per Hard Rule 3. If upstream absorbed a
+Section A customization wholesale, treat it like a resolved Section B item: skip
+and mark **Status: retired (upstreamed)**.
 
 ### 4. Verify gate
 
