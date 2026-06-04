@@ -167,3 +167,27 @@ describe('runBunLinkUpgrade rebase', () => {
     expect(() => git(install, 'rev-parse', '--verify', 'backup/pre-upgrade-ref1')).not.toThrow();
   });
 });
+
+describe('upgrade.ts bun-link wiring (source analysis)', () => {
+  const source = readFileSync(
+    new URL('../src/commands/upgrade.ts', import.meta.url),
+    'utf-8',
+  );
+
+  test('bun-link case calls runBunLinkUpgrade, not pull --ff-only', () => {
+    expect(source).toContain('runBunLinkUpgrade(');
+    expect(source).not.toContain("'pull', '--ff-only'");
+  });
+
+  test('verify gate: typecheck runs after bun install on bun-link path', () => {
+    expect(source).toContain("['run', 'typecheck']");
+  });
+
+  test('verify failure rolls back hard to the backup ref', () => {
+    expect(source).toContain("'reset', '--hard'");
+  });
+
+  test('briefing printer exists and is invoked', () => {
+    expect(source).toContain('printBunLinkBriefing(');
+  });
+});

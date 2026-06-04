@@ -180,3 +180,40 @@ export function runBunLinkUpgrade(
   }
   return { status: 'upgraded', upstream, pulled, replayed, backupRef };
 }
+
+/** Human-readable summary, plain console output matching the upgrade flow's style. */
+export function printBunLinkBriefing(r: BunLinkUpgradeResult): void {
+  switch (r.status) {
+    case 'current':
+      console.log('Already on the latest version.');
+      console.log('(Post-upgrade migrations can be re-run any time with: gbrain post-upgrade)');
+      break;
+    case 'no_upstream':
+    case 'dirty':
+      console.error(r.error);
+      break;
+    case 'failed':
+      console.error(`Upgrade failed: ${r.error}`);
+      if (r.backupRef) {
+        console.error(`Repo restored to pre-upgrade state (${r.backupRef}). Nothing was lost.`);
+      }
+      break;
+    case 'upgraded':
+      console.log(`Pulled ${r.pulled} upstream commit(s); ${r.replayed} local patch(es) replayed cleanly on top.`);
+      console.log(`Rollback point: ${r.backupRef}`);
+      break;
+    case 'upgraded_with_conflicts': {
+      console.log(`Pulled ${r.pulled} upstream commit(s); ${r.replayed} local patch(es) replayed cleanly.`);
+      console.log('');
+      console.log(`CONFLICTS — upstream version kept for ${r.conflicts!.length} file(s):`);
+      for (const c of r.conflicts!) {
+        console.log(`  ${c.file}  (patch: "${c.subject}")`);
+      }
+      console.log('');
+      console.log(`Your patched versions are backed up at: ${r.backupDir}`);
+      console.log(`Rollback point: ${r.backupRef}`);
+      console.log('To re-apply your patches with AI assistance, ask your agent to run the upgrade-resolve skill (skills/upgrade-resolve/SKILL.md). It will ask for your approval first.');
+      break;
+    }
+  }
+}
