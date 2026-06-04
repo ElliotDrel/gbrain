@@ -263,6 +263,11 @@
       "name": "skill-optimizer",
       "path": "skill-optimizer/SKILL.md",
       "description": "Self-evolving skill optimization via gbrain skillopt — SkillOpt-paper-grounded text-space optimizer with validation gating (median-of-3 + epsilon=0.05), bundled-skill safety, bootstrap review sentinel, per-skill DB lock, and atomic versioned writes."
+    },
+    {
+      "name": "upgrade-resolve",
+      "path": "upgrade-resolve/SKILL.md",
+      "description": "Re-apply local gbrain patches after gbrain upgrade resolved conflicts upstream-wins. Asks approval, reconstructs intent from PATCH.md + backups, verifies, reports."
     }
   ],
   "dependencies": {
