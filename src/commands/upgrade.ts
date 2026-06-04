@@ -2,6 +2,7 @@ import { execSync, execFileSync } from 'child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, realpathSync } from 'fs';
 import { basename, join, dirname, resolve } from 'path';
 import { VERSION } from '../version.ts';
+import { runBunLinkUpgrade, printBunLinkBriefing } from './upgrade-bunlink.ts';
 
 const GBRAIN_GITHUB_REPO = 'garrytan/gbrain';
 
@@ -30,13 +31,32 @@ export async function runUpgrade(args: string[]) {
         break;
       }
       console.log(`Upgrading bun-link source clone at ${linkInfo.repoRoot}...`);
-      try {
-        execFileSync('git', ['-C', linkInfo.repoRoot, 'pull', '--ff-only'], { stdio: 'inherit', timeout: 120_000 });
-        execFileSync('bun', ['install'], { cwd: linkInfo.repoRoot, stdio: 'inherit', timeout: 120_000 });
-        upgraded = true;
-      } catch {
-        console.error('Auto-upgrade failed. Try manually:');
-        console.error(`  cd ${linkInfo.repoRoot} && git pull && bun install`);
+      const result = runBunLinkUpgrade(linkInfo.repoRoot);
+      printBunLinkBriefing(result);
+      if (result.status === 'upgraded' || result.status === 'upgraded_with_conflicts') {
+        try {
+          execFileSync('bun', ['install'], { cwd: linkInfo.repoRoot, stdio: 'inherit', timeout: 120_000 });
+          // Verify gate: a half-applied replay must never ship silently.
+          execFileSync('bun', ['run', 'typecheck'], { cwd: linkInfo.repoRoot, stdio: 'inherit', timeout: 600_000 });
+          upgraded = true;
+        } catch (e) {
+          console.error('Verify gate failed — rolling back to pre-upgrade state.');
+          console.error(e instanceof Error ? e.message : String(e));
+          try {
+            execFileSync('git', ['-C', linkInfo.repoRoot, 'reset', '--hard', result.backupRef!], { stdio: 'inherit', timeout: 30_000 });
+            execFileSync('bun', ['install'], { cwd: linkInfo.repoRoot, stdio: 'inherit', timeout: 120_000 });
+            console.error(`Restored ${result.backupRef}. Nothing was lost.`);
+          } catch {
+            console.error(`AUTOMATIC ROLLBACK FAILED. Restore manually: git -C ${linkInfo.repoRoot} reset --hard ${result.backupRef}`);
+          }
+          recordUpgradeError({
+            phase: 'bun-link-verify',
+            fromVersion: oldVersion,
+            toVersion: 'unknown',
+            error: e instanceof Error ? e.message : String(e),
+            hint: `Upgrade rolled back to ${result.backupRef}. Investigate the typecheck failure, then re-run gbrain upgrade.`,
+          });
+        }
       }
       break;
     }

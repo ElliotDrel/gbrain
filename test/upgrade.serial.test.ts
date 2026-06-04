@@ -104,7 +104,11 @@ describe('detectInstallMethod heuristic (source analysis)', () => {
     // execFileSync with array args bypasses the shell (same pattern as
     // dry-fix.ts:172). execSync with template strings is vulnerable to
     // paths containing shell metacharacters.
-    expect(source).toContain("execFileSync('git', ['-C', linkInfo.repoRoot, 'pull', '--ff-only']");
+    // (The old `pull --ff-only` line was replaced by the rebase-aware
+    // runBunLinkUpgrade — which uses the same execFileSync array-args
+    // pattern internally — plus an execFileSync rollback path here.)
+    expect(source).toContain('runBunLinkUpgrade(linkInfo.repoRoot)');
+    expect(source).toContain("execFileSync('git', ['-C', linkInfo.repoRoot, 'reset', '--hard', result.backupRef!]");
     expect(source).toContain("execFileSync('bun', ['install']");
   });
 
