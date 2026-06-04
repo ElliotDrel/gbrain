@@ -136,13 +136,15 @@ about a company -> `companies/`, reusable framework -> `concepts/`, raw data -> 
 **Input:** URL (YouTube, podcast, etc.) or local audio/video file.
 
 **Process:**
-1. Get transcript -- speaker-diarized if possible (services like Diarize.io provide
+1. For social/video URLs, route through `media-ingest`'s integrated Supadata path
+   first so transcript + metadata land together in one raw provenance file
+2. Get transcript -- speaker-diarized if possible (services like Diarize.io provide
    speaker-labeled, word-level timing)
-2. **Save raw transcript** (both JSON and human-readable TXT)
-3. Analyze: executive summary, key ideas, key quotes with speaker attribution,
+3. **Save raw transcript** (both JSON and human-readable TXT)
+4. Analyze: executive summary, key ideas, key quotes with speaker attribution,
    notable stories/anecdotes, people and companies mentioned
-4. Extract and cross-reference all entities mentioned
-5. **HARD RULE:** every video/podcast brain page MUST link to the raw diarized
+5. Extract and cross-reference all entities mentioned
+6. **HARD RULE:** every video/podcast brain page MUST link to the raw diarized
    transcript. A page without transcript links is incomplete.
 
 **Write to:** `media/videos/` or `media/podcasts/` with back-links to all entities.
