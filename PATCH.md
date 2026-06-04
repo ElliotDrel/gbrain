@@ -8,7 +8,27 @@ workspace scripts unless those are moved upstream into gbrain itself.
 No code snippets here — only intent, scope, and enough pointers for a capable
 developer to rebuild the changes quickly after an update.
 
-Last updated: 2026-06-01.
+Last updated: 2026-06-03.
+
+## How this file is used (safe-upgrade protocol)
+
+`gbrain upgrade` (bun-link installs) rebases local patch commits onto upstream.
+Where upstream touched the same lines, **upstream wins by default** and the
+patched file is backed up to `~/.gbrain/upgrade-backups/<id>/` with a
+`manifest.json`. The `skills/upgrade-resolve` skill then — with explicit user
+approval — re-applies each patch's INTENT onto the new upstream code using
+three reference points: the new upstream file, the backed-up patched file, and
+this file's entry.
+
+**Safe-change protocol (how to make a patch that survives upgrades):**
+1. Make the change and commit it on the clone's branch (never leave it uncommitted).
+2. Add or refresh this file's entry in the same logical unit: what changed,
+   why, and how to recreate it — intent, not code.
+3. When a patch is upstreamed or abandoned, mark its entry **Status: retired**
+   instead of deleting it (history stays greppable).
+
+Entries follow the existing format below: `## N. MODIFIED <kind> — <path>`
+with **Change / Edit made / Why / How to recreate** (+ optional **Status**).
 
 ---
 
