@@ -96,8 +96,20 @@ flag it, and continue with the rest.
 - Refresh the matching `PATCH.md` entries (commit message: `docs(PATCH.md): refresh after upgrade <id>`).
 - Leave the backup directory in place (forensics); the user can delete old ones.
 
-### 6. Final briefing (mandatory)
+### 6. Propagate updated skills to the live workspace
+
+After the fork is committed, push the upgraded skill content into the running
+OpenClaw workspace so the changes actually go live:
+
+    bash /home/supe/.openclaw/workspace/scripts/sync-skills-from-fork.sh
+
+This overwrites the workspace's copies of the consumer skills (the set declared in
+`openclaw.plugin.json`) from the fork. Safe and idempotent — the workspace copies
+are disposable mirrors of the fork, never hand-edited. Note what it updated.
+
+### 7. Final briefing (mandatory)
 
 Report exactly: which files were re-applied and HOW the new code differs from
 the old patch, which were skipped as upstreamed, which were flagged and why,
-verify-gate result, and the rollback points (`backupRef`, backup dir).
+verify-gate result, the **workspace propagation result** (step 6: skills updated),
+and the rollback points (`backupRef`, backup dir).
