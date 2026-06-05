@@ -121,6 +121,21 @@ share link is de-duplicated for zero credits. If the post already has a
 - To deliberately re-fetch a complete post (e.g. the transcript was wrong), pass
   `--force` — this bills credits, so only with Elliot's say-so.
 
+**CROSS-PLATFORM DEDUP (gate 3).** The id-gate is per-platform, so the *same clip*
+cross-posted to another platform (different URL + id) passes it. After a successful
+fetch the script fingerprints the transcript (`content-fingerprint.mjs`, bigram
+Jaccard) and compares it to every saved video. A high match prints
+`⚠ POSSIBLE CROSS-PLATFORM DUPLICATE — …` with the matching platform/id/URL. This
+needs the transcript so it runs *after* the (paid) fetch — it guards against a
+duplicate **page**, not the credit. When you see it:
+
+- **Surface it to Elliot** and ask if it's the same video.
+- **Prefer adding the new URL as an extra source on the EXISTING concept page**
+  (e.g. an "Also posted on" line / second source entry) rather than creating a new
+  page. Only file a separate page if he confirms it's genuinely different.
+- It never auto-skips — cross-platform sameness is a judgment call, so it's
+  surfaced, not enforced.
+
 **ONE ATTEMPT — credits are billed per request.** The script never retries.
 Exit codes: `0` ok / already-ingested · `1` usage · `2` no api key · `3` metadata
 error · `4` transcript error. On **any** non-zero exit (or a `>>> SURFACE THIS TO
