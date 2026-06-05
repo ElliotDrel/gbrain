@@ -30,6 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { resolve as resolveUrl } from './canonical-url.mjs';
 
 const BASE = 'https://api.supadata.ai/v1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -45,20 +46,6 @@ if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>] [-
 // ---- dedup (deterministic, keyed by the post's canonical shortcode/id) ----
 const socialDir = path.join(brain, 'sources', 'social');
 const sanitizeId = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
-// Pull the stable post id from common URL shapes — FREE, no API call. Returns
-// null when the shape is unknown (the post-metadata backstop still covers it).
-function shortcodeFromUrl(u) {
-  try {
-    const { hostname, pathname, searchParams } = new URL(u);
-    const h = hostname.replace(/^www\./, '');
-    let m;
-    if (h.includes('instagram.com') && (m = pathname.match(/\/(?:reel|reels|p|tv)\/([A-Za-z0-9_-]+)/))) return m[1];
-    if (h.includes('tiktok.com')    && (m = pathname.match(/\/video\/(\d+)/)))                          return m[1];
-    if (h.includes('youtube.com'))  { const v = searchParams.get('v'); if (v) return v; if ((m = pathname.match(/\/shorts\/([A-Za-z0-9_-]+)/))) return m[1]; }
-    if (h.includes('youtu.be')      && (m = pathname.match(/^\/([A-Za-z0-9_-]+)/)))                     return m[1];
-  } catch { /* fall through */ }
-  return null;
-}
 // Path of an already-COMPLETE fetch (.txt with _transcript_state: "ok") for this
 // id, else null. A file whose prior fetch was empty/error is treated as absent
 // so we re-fetch and finish it.
@@ -83,8 +70,11 @@ function skipIfDuplicate(id, stage) {
   console.error('[social-fetch] Skipped: this post already has a complete transcript on disk. Re-run with --force to re-fetch (bills credits). Surface to Elliot — do NOT silently re-file a duplicate concept page.');
   process.exit(0);
 }
-// GATE 1 — free pre-check from the URL, before spending any credit.
-skipIfDuplicate(shortcodeFromUrl(url), 'url-precheck');
+// GATE 1 — canonicalize the URL (handles share/short links via a FREE redirect
+// follow — NOT a Supadata credit) to get the post's stable id, then skip if we
+// already have a complete fetch for it. Done before spending any paid credit.
+const canon = await resolveUrl(url);
+skipIfDuplicate(canon?.id, canon?.resolvedFrom ? 'redirect-precheck' : 'url-precheck');
 
 // ---- api key (env, then openclaw.json) ----
 const apiKey = process.env.SUPADATA_API_KEY
@@ -167,7 +157,7 @@ const transcriptBlock = t.state === 'ok'
     : `_(TRANSCRIPT ERROR — ${t.error})_`;
 const transcriptHeading = timestamped ? '## Transcript (timestamped)' : '## Transcript';
 
-const front = { ...m, _source_url: url, _fetched_at: new Date().toISOString(), _transcript_state: t.state, _transcript_timestamped: timestamped };
+const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _fetched_at: new Date().toISOString(), _transcript_state: t.state, _transcript_timestamped: timestamped };
 const fm = Object.entries(front).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
 
 const out = `---
@@ -176,7 +166,7 @@ ${fm}
 
 # ${m.title || `${platform} ${m.type || 'post'} by ${m.author?.username || 'unknown'}`}
 
-**Source:** ${url}
+**Source:** ${canon?.canonicalUrl || url}
 **Platform:** ${platform} · **Author:** ${m.author?.displayName || m.author?.username || 'unknown'} · **Posted:** ${m.createdAt || 'unknown'}
 
 ## Description

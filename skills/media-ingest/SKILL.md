@@ -104,11 +104,14 @@ node skills/media-ingest/scripts/social-fetch.mjs "<url>"
 - Prints the absolute raw-file path on stdout when a file is written
 
 **DEDUP — the script refuses to re-fetch a post already on disk.** It is keyed by
-the post's canonical shortcode/id and checks twice: a free URL pre-check before
-any API call, and an authoritative backstop after metadata (before the costly
-transcript call). If the post already has a **complete** transcript on disk it
-exits `0`, prints the existing path, and logs `[social-fetch] ALREADY INGESTED`.
-When you see that:
+the post's canonical shortcode/id (via `canonical-url.mjs`, which normalizes every
+link shape — mobile host, `/reel` vs `/reels`, `?igsh=`/tracking params — and
+follows **share/short links through a FREE redirect**, not a Supadata call) and
+checks twice: a free pre-check before any API call, and an authoritative backstop
+after metadata (before the costly transcript call). So even a `vm.tiktok.com`
+share link is de-duplicated for zero credits. If the post already has a
+**complete** transcript on disk it exits `0`, prints the existing path, and logs
+`[social-fetch] ALREADY INGESTED`. When you see that:
 
 - **Do NOT re-file a duplicate concept page.** Tell Elliot the post was already
   ingested (cite the existing raw path / its concept page) and ask whether he
