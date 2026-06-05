@@ -23,6 +23,39 @@ test('instagram: /p/ and /tv/ preserve their type in the canonical url', () => {
   assert.equal(canonicalize('https://www.instagram.com/tv/XYZ/').canonicalUrl, 'https://www.instagram.com/tv/XYZ/');
 });
 
+test('instagram: username-prefixed post/reel URLs (from a profile) collapse to the canonical no-username form', () => {
+  assert.deepEqual(canonicalize('https://www.instagram.com/elliotdrel/reel/DZGb63Tx43_/'),
+    { platform: 'instagram', id: 'DZGb63Tx43_', canonicalUrl: 'https://www.instagram.com/reel/DZGb63Tx43_/' });
+  assert.deepEqual(canonicalize('https://www.instagram.com/some.user/p/ABC123/'),
+    { platform: 'instagram', id: 'ABC123', canonicalUrl: 'https://www.instagram.com/p/ABC123/' });
+});
+
+test('youtube: music. and other subdomains resolve like youtube.com', () => {
+  assert.equal(canonicalize('https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=RDxx').id, 'dQw4w9WgXcQ');
+  assert.equal(canonicalize('https://gaming.youtube.com/watch?v=dQw4w9WgXcQ').id, 'dQw4w9WgXcQ');
+  assert.equal(canonicalize('https://www.youtube.com/live/dQw4w9WgXcQ').id, 'dQw4w9WgXcQ');
+});
+
+test('tiktok: photo posts extract the numeric id and keep type', () => {
+  const c = canonicalize('https://www.tiktok.com/@some.user/photo/7300000000000000002');
+  assert.equal(c.platform, 'tiktok');
+  assert.equal(c.id, '7300000000000000002');
+  assert.equal(c.canonicalUrl, 'https://www.tiktok.com/@some.user/photo/7300000000000000002');
+});
+
+test('x: /i/web/status/ and /statuses/ legacy forms both yield the id', () => {
+  assert.equal(canonicalize('https://twitter.com/i/web/status/1050118621198921728').id, '1050118621198921728');
+  assert.equal(canonicalize('https://twitter.com/statuses/20').id, '20');
+  assert.equal(canonicalize('https://x.com/i/status/20').id, '20');
+});
+
+test('facebook: /reel/<id> is recognized', () => {
+  const c = canonicalize('https://www.facebook.com/reel/1234567890');
+  assert.equal(c.platform, 'facebook');
+  assert.equal(c.id, '1234567890');
+  assert.equal(c.canonicalUrl, 'https://www.facebook.com/reel/1234567890');
+});
+
 test('youtube: watch / youtu.be / shorts / embed + tracking params -> same video id', () => {
   for (const v of [
     'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s',

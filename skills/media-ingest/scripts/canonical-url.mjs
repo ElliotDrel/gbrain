@@ -25,7 +25,7 @@ const UA =
 const RESOLVE_HOSTS = new Set([
   'vm.tiktok.com', 'vt.tiktok.com', 'tiktok.com',      // /t/<code> + share subdomains
   'instagram.com', 'instagr.am',                        // /share/...
-  'facebook.com', 'fb.watch', 'fb.com',
+  'facebook.com', 'fb.watch', 'fb.com', 'fbwat.ch', 'l.facebook.com', // fb shares/wrappers
   't.co', 'bit.ly', 'tinyurl.com', 'goo.gl',           // generic shorteners
 ]);
 
@@ -43,33 +43,36 @@ export function canonicalize(input) {
   const p = u.pathname;
   let m;
 
-  // Instagram — /reel, /reels, /p, /tv
+  // Instagram — /reel, /reels, /p, /tv ; also username-prefixed /<user>/reel/<code>
   if (host === 'instagram.com' || host === 'instagr.am') {
-    if ((m = p.match(/^\/(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/))) {
+    if (p.startsWith('/share')) return null; // /share/ carries an opaque token, NOT the shortcode -> resolve()
+    if ((m = p.match(/(?:^|\/)(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/))) {
       const type = m[1] === 'reels' ? 'reel' : m[1];
       return { platform: 'instagram', id: m[2], canonicalUrl: `https://www.instagram.com/${type}/${m[2]}/` };
     }
-    return null; // /share/... is opaque -> resolve()
+    return null; // /share/..., /stories/... opaque -> resolve()
   }
 
-  // TikTok — /@user/video/<id> (numeric)
+  // TikTok — /@user/video/<id> or /@user/photo/<id> (numeric)
   if (host === 'tiktok.com') {
-    if ((m = p.match(/\/video\/(\d+)/))) {
+    if ((m = p.match(/\/(video|photo)\/(\d+)/))) {
+      const kind = m[1], vid = m[2];
       const user = (p.match(/\/(@[A-Za-z0-9_.]+)\//) || [])[1];
       return {
         platform: 'tiktok',
-        id: m[1],
-        canonicalUrl: user ? `https://www.tiktok.com/${user}/video/${m[1]}` : `https://www.tiktok.com/video/${m[1]}`,
+        id: vid,
+        canonicalUrl: user ? `https://www.tiktok.com/${user}/${kind}/${vid}` : `https://www.tiktok.com/${kind}/${vid}`,
       };
     }
-    return null; // /t/<code> short -> resolve()
+    return null; // /t/<code>, vm./vt. short links -> resolve()
   }
 
-  // YouTube — watch?v=, /shorts, /embed, /v, /live ; youtu.be/<id>
-  if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+  // YouTube — watch?v=, /shorts, /embed, /v, /vi, /live ; any *.youtube.com
+  // (music./gaming./www./m.) ; youtu.be/<id>
+  if (host === 'youtube.com' || host === 'youtube-nocookie.com' || host.endsWith('.youtube.com')) {
     const v = u.searchParams.get('v');
     if (v) return { platform: 'youtube', id: v, canonicalUrl: `https://www.youtube.com/watch?v=${v}` };
-    if ((m = p.match(/^\/(?:shorts|embed|v|live)\/([A-Za-z0-9_-]+)/)))
+    if ((m = p.match(/^\/(?:shorts|embed|v|vi|live)\/([A-Za-z0-9_-]+)/)))
       return { platform: 'youtube', id: m[1], canonicalUrl: `https://www.youtube.com/watch?v=${m[1]}` };
     return null;
   }
@@ -79,20 +82,22 @@ export function canonicalize(input) {
     return null;
   }
 
-  // X / Twitter — /<user>/status/<id> (numeric)
+  // X / Twitter — /<user>/status/<id>, /i/web/status/<id>, /statuses/<id> (numeric)
   if (host === 'twitter.com' || host === 'x.com') {
-    if ((m = p.match(/^\/[^/]+\/status\/(\d+)/)))
+    if ((m = p.match(/\/status(?:es)?\/(\d+)/)))
       return { platform: 'x', id: m[1], canonicalUrl: `https://x.com/i/status/${m[1]}` };
     return null;
   }
 
-  // Facebook — /videos/<id> or watch/?v=<id>
-  if (host === 'facebook.com' || host === 'fb.com') {
+  // Facebook — /reel/<id>, /videos/<id>, watch/?v=<id> ; any *.facebook.com (web./m.)
+  if (host === 'facebook.com' || host === 'fb.com' || host.endsWith('.facebook.com')) {
+    if ((m = p.match(/\/reel\/(\d+)/)))
+      return { platform: 'facebook', id: m[1], canonicalUrl: `https://www.facebook.com/reel/${m[1]}` };
     if ((m = p.match(/\/videos\/(\d+)/)))
       return { platform: 'facebook', id: m[1], canonicalUrl: `https://www.facebook.com/watch/?v=${m[1]}` };
     if ((m = (u.searchParams.get('v') || '').match(/^(\d+)$/)))
       return { platform: 'facebook', id: m[1], canonicalUrl: `https://www.facebook.com/watch/?v=${m[1]}` };
-    return null; // fb.watch/<code> -> resolve()
+    return null; // fb.watch/<code>, /share/, story.php -> resolve()
   }
 
   return null;
