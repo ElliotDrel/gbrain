@@ -400,6 +400,35 @@ describe('scorePatternFull — full-body scoring (v0.41.18+ Codex P1 #1)', () =>
 // ~/git/brain/meetings/*.md with `source: circleback` frontmatter)
 // ---------------------------------------------------------------------------
 
+describe('me-them-no-time pattern (two-party call transcripts)', () => {
+  test('matches Me:/Them: turns with frontmatter date', () => {
+    const body = [
+      'Me: Hey Charlie.',
+      'Them: How are you?',
+      "Me: I'm doing great. What about yourself?",
+      'Them: Long day? Very, very busy, but doing well.',
+    ].join('\n');
+    const r = parseConversation(body, { fallbackDate: '2026-05-28' });
+    expect(r.phase).toBe('regex_match');
+    expect(r.matched_pattern_id).toBe('me-them-no-time');
+    expect(r.messages).toHaveLength(4);
+    expect(r.messages[0].speaker).toBe('Me');
+    expect(r.messages[0].text).toBe('Hey Charlie.');
+    expect(r.messages[1].speaker).toBe('Them');
+    expect(r.messages[0].timestamp).toContain('2026-05-28');
+  });
+
+  test('prose lines that merely start with Me/Them do NOT parse as a transcript', () => {
+    const body = [
+      'Meeting: notes from today',
+      'Member: alice joined',
+      'Theme: dark mode shipped',
+    ].join('\n');
+    const r = parseConversation(body, { fallbackDate: '2026-05-28' });
+    expect(r.matched_pattern_id).not.toBe('me-them-no-time');
+  });
+});
+
 describe('bold-paren-time pattern (Circleback meeting transcripts)', () => {
   test('matches **Speaker** (HH:MM): text with frontmatter date', () => {
     const body = [

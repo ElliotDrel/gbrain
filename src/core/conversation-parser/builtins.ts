@@ -212,6 +212,54 @@ export const BUILTIN_PATTERNS: readonly PatternEntry[] = [
   },
 
   {
+    // Two-party phone/voice transcripts that label turns relative to the
+    // recorder rather than by name/letter: `Me: ...` / `Them: ...`. Same
+    // no-time shape as speaker-letter-no-time (date_source='frontmatter',
+    // no hour_group → parse.ts no-time branch, every turn anchors at
+    // 00:00:00 of the page date; line order preserves intra-call ordering).
+    //
+    // NON-SHADOW: the regex anchors the colon IMMEDIATELY after `Me`/`Them`
+    // (`^(Me|Them):`), so common prose that merely starts with those
+    // letters does NOT match — `Meeting:`, `Member:`, `Theme:`, `Themself:`
+    // all fail (next char after Me/Them is not `:`). It shares no prefix
+    // with speaker-letter (`Speaker `) or the bold patterns (`**`).
+    //
+    // BROAD-REGEX GUARD (score_full_body): `Me:`/`Them:` could appear as a
+    // stray prose line, so full-body density scoring runs before acceptance
+    // — a page with one stray `Me:` line falls to no_match.
+    id: 'me-them-no-time',
+    origin: 'builtin',
+    regex: /^(Me|Them):\s*(.*)$/,
+    captures: {
+      speaker_group: 1,
+      text_group: 2,
+    },
+    date_source: 'frontmatter',
+    time_format: '24h',
+    timezone_policy: 'utc_assumed_with_warn',
+    multi_line: false,
+    quick_reject: /^(?:Me|Them):/,
+    score_full_body: true,
+    test_positive: [
+      'Me: Hey Charlie.',
+      'Them: How are you?',
+      'Them: Long day? Very, very busy, but doing well.',
+    ],
+    test_negative: [
+      // shares leading letters but colon is not immediately after Me/Them:
+      'Meeting: notes from today',
+      'Member: alice joined',
+      'Theme: dark mode shipped',
+      'Themself: reflexive prose',
+      // other transcript shapes MUST fall through:
+      'Speaker A: different raw format',
+      '**Me:** bold shape belongs to bold-name-no-time',
+    ],
+    source_doc:
+      'Workspace raw transcript sidecar shape from capture-cli two-party call transcripts: `Me: ...` / `Them: ...`',
+  },
+
+  {
     // Modern meeting-transcription tools (Circleback, Granola, Zoom)
     // emit `**Speaker Name:** message text` with NO per-line
     // timestamp. Every other built-in requires a time anchor, so this
