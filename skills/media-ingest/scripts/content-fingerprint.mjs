@@ -14,7 +14,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 
 // Lowercase, drop [m:ss] timestamp prefixes, strip punctuation, collapse spaces.
 export function normalize(text) {
@@ -24,10 +23,6 @@ export function normalize(text) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-export function sha256(text) {
-  return crypto.createHash('sha256').update(normalize(text)).digest('hex');
 }
 
 // Set of word n-grams. Falls back to the word set when shorter than n words.
