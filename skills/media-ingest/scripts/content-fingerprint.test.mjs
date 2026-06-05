@@ -60,6 +60,8 @@ test('findContentDuplicates flags a cross-platform repost and excludes self', ()
   assert.equal(hits[0].id, 'TT1');
   assert.equal(hits[0].platform, 'tiktok');
   assert.ok(hits[0].similarity >= 0.6);
+  assert.ok(path.isAbsolute(hits[0].file), 'file path must be absolute for the caller to read');
+  assert.equal(hits[0].file, path.join(dir, 'tiktok-TT1.txt'));
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
