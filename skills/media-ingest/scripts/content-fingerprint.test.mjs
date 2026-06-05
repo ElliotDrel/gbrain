@@ -37,6 +37,14 @@ test('different video sharing only an intro phrase -> low bigram similarity', ()
   assert.ok(sim < 0.3, `expected <0.3, got ${sim}`);
 });
 
+test('non-English (Cyrillic) transcripts are NOT dropped — Unicode-aware normalize', () => {
+  const ru = '[0:00] Привет, это тест! Мы говорим о привычках и продуктивности.';
+  assert.equal(normalize(ru), 'привет это тест мы говорим о привычках и продуктивности');
+  // same Russian clip with platform caption drift still matches itself strongly
+  const ru2 = 'привет это тест мы говорим о привычках и о продуктивности каждый день';
+  assert.ok(jaccard(shingles(ru, 2), shingles(ru2, 2)) >= 0.5);
+});
+
 test('short text falls back to word set', () => {
   assert.deepEqual([...shingles('hi there', 4)], ['hi', 'there']);
 });

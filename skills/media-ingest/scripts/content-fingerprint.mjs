@@ -10,17 +10,21 @@
 // Deterministic: same transcripts -> same score. Pure local compute, no network.
 // IMPORTANT: this needs the transcript, so it runs AFTER the (paid) fetch. It
 // prevents a duplicate brain PAGE; it cannot save the Supadata credit the way the
-// id-gate does. Tuned for English transcripts (normalize() keeps [a-z0-9]).
+// id-gate does. Works for any space-delimited script (Latin, Cyrillic, accented,
+// etc.) — normalize() keeps all Unicode letters/numbers. (Scriptio-continua langs
+// like Chinese/Japanese have no word breaks, so word-shingling degrades there.)
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 // Lowercase, drop [m:ss] timestamp prefixes, strip punctuation, collapse spaces.
+// Unicode-aware: keeps letters/numbers in ANY script (Cyrillic, accented Latin, …),
+// not just ASCII — otherwise non-English transcripts normalize to "" and dedup is blind.
 export function normalize(text) {
   return String(text || '')
     .replace(/\[[0-9:]+\]/g, ' ')   // [0:00] / [1:23] timestamp markers
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -73,7 +77,7 @@ const frontVal = (content, key) => {
 
 // Bigrams (n=2) are the operating point: tolerant of the word-by-word differences
 // between platforms' auto-captions of the SAME clip, while still separating a
-// different video by the same creator. Exact (sha-identical) transcripts score 1.0.
+// different video by the same creator.
 const NGRAM = 2;
 const DEFAULT_THRESHOLD = 0.5;       // Jaccard — near-identical (same clip)
 const OVERLAP_THRESHOLD = 0.8;       // overlap coef — one clip contained in the other
