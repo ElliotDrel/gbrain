@@ -15,9 +15,17 @@
 // media-ingest skill / the AI) MUST relay that to Elliot for troubleshooting
 // instead of silently re-running and wasting credits.
 //
-// Usage:  node social-fetch.mjs <url> [--brain <dir>]
-// Output: prints the written file path as the last stdout line (when a file is written).
-// Exit:   0 ok · 1 usage · 2 no api key · 3 metadata error · 4 transcript error
+// DEDUP: this post may already be on disk. Each fetch is keyed by the post's
+// canonical shortcode/id (the .txt filename suffix), so we refuse to re-fetch a
+// post we already have a COMPLETE transcript for — two gates:
+//   (1) free URL pre-check BEFORE any API call (no credits, dodges rate limits)
+//   (2) authoritative backstop AFTER metadata, BEFORE the costly transcript call
+// An incomplete prior fetch (_transcript_state empty/error) is NOT a duplicate —
+// it re-fetches to finish. Pass --force to re-fetch deliberately (bills credits).
+//
+// Usage:  node social-fetch.mjs <url> [--brain <dir>] [--force]
+// Output: prints the written (or already-existing) file path as the last stdout line.
+// Exit:   0 ok / already-ingested · 1 usage · 2 no api key · 3 metadata error · 4 transcript error
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,8 +38,53 @@ const SURFACE = '>>> SURFACE THIS TO THE USER. One attempt only was made — Sup
 // ---- args ----
 const argv = process.argv.slice(2);
 const url = argv.find((a) => !a.startsWith('-'));
+const force = argv.includes('--force');
 const brain = (() => { const i = argv.indexOf('--brain'); return i >= 0 ? argv[i + 1] : path.join(os.homedir(), 'brain'); })();
-if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>]'); process.exit(1); }
+if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>] [--force]'); process.exit(1); }
+
+// ---- dedup (deterministic, keyed by the post's canonical shortcode/id) ----
+const socialDir = path.join(brain, 'sources', 'social');
+const sanitizeId = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
+// Pull the stable post id from common URL shapes — FREE, no API call. Returns
+// null when the shape is unknown (the post-metadata backstop still covers it).
+function shortcodeFromUrl(u) {
+  try {
+    const { hostname, pathname, searchParams } = new URL(u);
+    const h = hostname.replace(/^www\./, '');
+    let m;
+    if (h.includes('instagram.com') && (m = pathname.match(/\/(?:reel|reels|p|tv)\/([A-Za-z0-9_-]+)/))) return m[1];
+    if (h.includes('tiktok.com')    && (m = pathname.match(/\/video\/(\d+)/)))                          return m[1];
+    if (h.includes('youtube.com'))  { const v = searchParams.get('v'); if (v) return v; if ((m = pathname.match(/\/shorts\/([A-Za-z0-9_-]+)/))) return m[1]; }
+    if (h.includes('youtu.be')      && (m = pathname.match(/^\/([A-Za-z0-9_-]+)/)))                     return m[1];
+  } catch { /* fall through */ }
+  return null;
+}
+// Path of an already-COMPLETE fetch (.txt with _transcript_state: "ok") for this
+// id, else null. A file whose prior fetch was empty/error is treated as absent
+// so we re-fetch and finish it.
+function existingOkFile(id) {
+  if (!id) return null;
+  const want = sanitizeId(id);
+  try {
+    for (const f of fs.readdirSync(socialDir)) {
+      if (!f.endsWith(`-${want}.txt`)) continue;
+      const head = fs.readFileSync(path.join(socialDir, f), 'utf8').slice(0, 4000);
+      return /^_transcript_state:\s*"ok"/m.test(head) ? path.join(socialDir, f) : null;
+    }
+  } catch { /* dir missing on first run */ }
+  return null;
+}
+function skipIfDuplicate(id, stage) {
+  if (force) return;
+  const hit = existingOkFile(id);
+  if (!hit) return;
+  console.log(hit); // path, for the caller — same stdout contract as a fresh write
+  console.error(`[social-fetch] ALREADY INGESTED (${stage}) — ${hit}`);
+  console.error('[social-fetch] Skipped: this post already has a complete transcript on disk. Re-run with --force to re-fetch (bills credits). Surface to Elliot — do NOT silently re-file a duplicate concept page.');
+  process.exit(0);
+}
+// GATE 1 — free pre-check from the URL, before spending any credit.
+skipIfDuplicate(shortcodeFromUrl(url), 'url-precheck');
 
 // ---- api key (env, then openclaw.json) ----
 const apiKey = process.env.SUPADATA_API_KEY
@@ -95,11 +148,14 @@ if (meta.status !== 200 || !meta.body?.id) {
   process.exit(3);
 }
 const m = meta.body;
+// GATE 2 — authoritative backstop on the canonical id, before the costly
+// transcript call. Catches URL shapes GATE 1's regex didn't recognize.
+skipIfDuplicate(m.id, 'metadata-id');
 const t = await getTranscript();
 
 const platform = String(m.platform || 'unknown').toLowerCase();
-const id = String(m.id).replace(/[^A-Za-z0-9._-]/g, '_');
-const dir = path.join(brain, 'sources', 'social');
+const id = sanitizeId(m.id);
+const dir = socialDir;
 fs.mkdirSync(dir, { recursive: true });
 const file = path.join(dir, `${platform}-${id}.txt`); // .txt = not ingested by sync (disk-only provenance)
 
