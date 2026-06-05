@@ -140,6 +140,12 @@
       "directory": "conversations/",
       "examples": ["conversations/chatgpt/{thread-slug}.md", "conversations/claude/{thread-slug}.md"],
       "description": "Imported chat exports (ChatGPT, Claude, etc.) where the conversation itself is the artifact. Cross-link concepts and people from the conversation; the conversation page is the source-of-truth for the dialog. Distinct from voice-notes/ (which holds raw voice capture)."
+    },
+    {
+      "kind": "social-raw",
+      "directory": "sources/social/",
+      "examples": ["sources/social/<platform>-<id>.txt"],
+      "description": "Raw provenance (.txt, disk-only, not engine-synced) for social/short-form video ingested via media-ingest. Follows the sources/ raw-data convention; never a filed page."
     }
   ],
   "sources_dir": {
