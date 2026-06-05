@@ -103,10 +103,25 @@ node skills/media-ingest/scripts/social-fetch.mjs "<url>"
 - Idempotent path: same `<platform>-<id>` overwrites, never duplicates
 - Prints the absolute raw-file path on stdout when a file is written
 
+**DEDUP — the script refuses to re-fetch a post already on disk.** It is keyed by
+the post's canonical shortcode/id and checks twice: a free URL pre-check before
+any API call, and an authoritative backstop after metadata (before the costly
+transcript call). If the post already has a **complete** transcript on disk it
+exits `0`, prints the existing path, and logs `[social-fetch] ALREADY INGESTED`.
+When you see that:
+
+- **Do NOT re-file a duplicate concept page.** Tell Elliot the post was already
+  ingested (cite the existing raw path / its concept page) and ask whether he
+  wants anything changed before doing more work.
+- A prior fetch that was incomplete (`_transcript_state` `empty`/`error`) is NOT
+  treated as a duplicate — the script re-fetches to finish it. That is expected.
+- To deliberately re-fetch a complete post (e.g. the transcript was wrong), pass
+  `--force` — this bills credits, so only with Elliot's say-so.
+
 **ONE ATTEMPT — credits are billed per request.** The script never retries.
-Exit codes: `0` ok · `1` usage · `2` no api key · `3` metadata error ·
-`4` transcript error. On **any** non-zero exit (or a `>>> SURFACE THIS TO THE
-USER` line on stderr):
+Exit codes: `0` ok / already-ingested · `1` usage · `2` no api key · `3` metadata
+error · `4` transcript error. On **any** non-zero exit (or a `>>> SURFACE THIS TO
+THE USER` line on stderr):
 
 - **STOP.** Do NOT re-run the script and do NOT hand-write a raw file to paper
   over it
