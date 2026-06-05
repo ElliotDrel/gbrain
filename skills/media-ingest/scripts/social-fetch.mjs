@@ -201,9 +201,14 @@ console.error(`[social-fetch] wrote ${file} (transcript: yes)`);
 // PAGE, not the credit. Surfaced for a human call; never auto-skips.
 const dupes = findContentDuplicates(t.text, dir, { selfId: String(m.id) });
 if (dupes.length) {
-  console.error('[social-fetch] ⚠ POSSIBLE CROSS-PLATFORM DUPLICATE — this transcript closely matches already-saved video(s):');
+  const thisDur = m.media?.duration ?? m.duration ?? null;
+  console.error('[social-fetch] ⚠ POSSIBLE DUPLICATE CONTENT — this transcript matches already-saved video(s):');
   for (const d of dupes.slice(0, 3)) {
-    console.error(`   • ${Math.round(d.similarity * 100)}% match — ${d.platform} ${d.id} — ${d.url || d.file}`);
+    const durs = (thisDur && d.duration) ? ` [this ~${Math.round(thisDur)}s vs saved ~${Math.round(d.duration)}s]` : '';
+    const tag = d.reason === 'subset'
+      ? `CLIP-OF-A-CLIP — ${Math.round(d.overlap * 100)}% of the shorter video is contained in the other${durs}`
+      : `${Math.round(d.similarity * 100)}% near-identical (likely cross-platform repost)`;
+    console.error(`   • ${tag} — ${d.platform} ${d.id} — ${d.url || d.file}`);
   }
-  console.error('[social-fetch] Creators cross-post the same clip across platforms. SURFACE TO ELLIOT: is this the same video? Prefer adding this URL as an extra source on the EXISTING concept page rather than creating a new duplicate page.');
+  console.error('[social-fetch] SURFACE TO ELLIOT before filing. Same clip / cross-post / longer-or-shorter cut? Prefer adding this URL as an extra source on the EXISTING concept page (note the duration difference) over creating a duplicate page.');
 }

@@ -4,7 +4,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalize, sha256, shingles, jaccard, extractTranscript, findContentDuplicates } from './content-fingerprint.mjs';
+import { normalize, sha256, shingles, jaccard, overlap, extractTranscript, findContentDuplicates } from './content-fingerprint.mjs';
+
+// A ~30-word clip and AB = A followed by ~30 more words (A is the first half of AB).
+const CLIP_A = 'the first habit is the thirty day rule which means you should frame everything as a thirty day challenge and commit to doing it daily without breaking the streak at all';
+// Much longer remainder so AB is ~3x A — the realistic "1-min clip inside a 3-min video"
+// case where Jaccard clearly drops below threshold but the clip is fully contained.
+const CLIP_EXTRA = 'the second habit is the serendipity hour where you block one full hour every single day to manufacture luck by cold messaging people you deeply admire applying to opportunities that feel far out of reach and following up relentlessly until they finally respond then the third habit is the ten thousand dollar task audit where each week you carefully separate low value busywork from the high leverage work that actually moves your whole life forward and you ruthlessly protect your calendar for the latter while delegating or deleting the rest entirely';
+const CLIP_AB = `${CLIP_A} ${CLIP_EXTRA}`;
 
 const A = 'This strategy proves that values sell. They could have just shown the product, but instead they led with the value behind it and got eleven million views.';
 // Same clip, different platform auto-captions: a couple of words differ / repunctuated.
@@ -57,6 +64,42 @@ test('findContentDuplicates flags a cross-platform repost and excludes self', ()
   assert.equal(hits[0].id, 'TT1');
   assert.equal(hits[0].platform, 'tiktok');
   assert.ok(hits[0].similarity >= 0.6);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('overlap coefficient: a clip contained in a longer cut scores ~1.0 where Jaccard does not', () => {
+  const a = shingles(CLIP_A, 2), ab = shingles(CLIP_AB, 2);
+  assert.ok(overlap(a, ab) >= 0.95, `overlap expected ~1.0, got ${overlap(a, ab)}`);
+  assert.ok(jaccard(a, ab) < 0.5, `jaccard expected <0.5 (why overlap is needed), got ${jaccard(a, ab)}`);
+});
+
+test('clip-of-a-clip is flagged as subset (both directions)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-'));
+  const mk = (id, transcript) => fs.writeFileSync(path.join(dir, `instagram-${id}.txt`),
+    `---\nplatform: "instagram"\nid: "${id}"\n_canonical_url: "https://www.instagram.com/reel/${id}/"\n---\n\n## Transcript\n\n${transcript}\n`);
+
+  // saving the SHORT clip when the LONG cut already exists
+  mk('LONG', CLIP_AB);
+  let hits = findContentDuplicates(CLIP_A, dir, {});
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].reason, 'subset');
+  assert.ok(hits[0].overlap >= 0.95);
+
+  // saving the LONG cut when the SHORT clip already exists
+  fs.rmSync(path.join(dir, 'instagram-LONG.txt'));
+  mk('SHORT', CLIP_A);
+  hits = findContentDuplicates(CLIP_AB, dir, {});
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].reason, 'subset');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a tiny fragment that appears inside a long video is NOT flagged (min-size guard)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cf-'));
+  fs.writeFileSync(path.join(dir, 'instagram-LONG.txt'),
+    `---\nplatform: "instagram"\nid: "LONG"\n---\n\n## Transcript\n\n${CLIP_AB}\n`);
+  // "thirty day rule" is literally inside CLIP_AB but far too short to trust
+  assert.equal(findContentDuplicates('thirty day rule', dir, {}).length, 0);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

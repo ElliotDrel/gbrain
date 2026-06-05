@@ -121,13 +121,19 @@ share link is de-duplicated for zero credits. If the post already has a
 - To deliberately re-fetch a complete post (e.g. the transcript was wrong), pass
   `--force` — this bills credits, so only with Elliot's say-so.
 
-**CROSS-PLATFORM DEDUP (gate 3).** The id-gate is per-platform, so the *same clip*
-cross-posted to another platform (different URL + id) passes it. After a successful
-fetch the script fingerprints the transcript (`content-fingerprint.mjs`, bigram
-Jaccard) and compares it to every saved video. A high match prints
-`⚠ POSSIBLE CROSS-PLATFORM DUPLICATE — …` with the matching platform/id/URL. This
-needs the transcript so it runs *after* the (paid) fetch — it guards against a
-duplicate **page**, not the credit. When you see it:
+**CONTENT DEDUP (gate 3).** The id-gate is per-platform, so the *same clip* cross-
+posted elsewhere (different URL + id) passes it. After a successful fetch the script
+fingerprints the transcript (`content-fingerprint.mjs`) and compares it to every
+saved video on two axes:
+- **near-duplicate** — high bigram Jaccard → same clip (incl. cross-platform repost).
+- **clip-of-a-clip / subset** — high overlap coefficient → one video's transcript is
+  contained in the other (a 1-min clip that's the first minute of a 3-min cut, or a
+  trimmed/extended re-upload). Jaccard alone misses this; overlap catches it.
+
+It prints `⚠ POSSIBLE DUPLICATE CONTENT — …` with the relationship, the matching
+platform/id/URL, and the duration delta when known. This needs the transcript so it
+runs *after* the (paid) fetch — it guards against a duplicate **page**, not the
+credit. When you see it:
 
 - **Surface it to Elliot** and ask if it's the same video.
 - **Prefer adding the new URL as an extra source on the EXISTING concept page**
