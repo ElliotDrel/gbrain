@@ -31,7 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { resolve as resolveUrl } from './canonical-url.mjs';
-import { sha256 as transcriptSha, findContentDuplicates } from './content-fingerprint.mjs';
+import { findContentDuplicates } from './content-fingerprint.mjs';
 
 const BASE = 'https://api.supadata.ai/v1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -158,7 +158,7 @@ const transcriptBlock = t.state === 'ok'
     : `_(TRANSCRIPT ERROR — ${t.error})_`;
 const transcriptHeading = timestamped ? '## Transcript (timestamped)' : '## Transcript';
 
-const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _duration: m.media?.duration ?? m.duration ?? null, _transcript_sha: t.state === 'ok' ? transcriptSha(t.text) : null, _fetched_at: new Date().toISOString(), _transcript_state: t.state, _transcript_timestamped: timestamped };
+const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _duration: m.media?.duration ?? m.duration ?? null, _fetched_at: new Date().toISOString(), _transcript_state: t.state, _transcript_timestamped: timestamped };
 const fm = Object.entries(front).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
 
 const out = `---

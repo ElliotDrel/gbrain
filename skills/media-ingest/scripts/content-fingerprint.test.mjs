@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalize, sha256, shingles, jaccard, overlap, extractTranscript, findContentDuplicates } from './content-fingerprint.mjs';
+import { normalize, shingles, jaccard, overlap, extractTranscript, findContentDuplicates } from './content-fingerprint.mjs';
 
 // A ~30-word clip and AB = A followed by ~30 more words (A is the first half of AB).
 const CLIP_A = 'the first habit is the thirty day rule which means you should frame everything as a thirty day challenge and commit to doing it daily without breaking the streak at all';
@@ -21,10 +21,6 @@ const B = 'This strategy proves that you should post every single day for thirty
 
 test('normalize: strips timestamps, case and punctuation', () => {
   assert.equal(normalize('[0:12] Hello, WORLD!!'), 'hello world');
-});
-
-test('sha256 is invariant to timestamps/case/punctuation', () => {
-  assert.equal(sha256('Hello world'), sha256('[0:00] hello, WORLD!'));
 });
 
 test('identical transcript -> jaccard 1.0', () => {
