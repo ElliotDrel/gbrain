@@ -31,6 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { resolve as resolveUrl } from './canonical-url.mjs';
+import { sha256 as transcriptSha, findContentDuplicates } from './content-fingerprint.mjs';
 
 const BASE = 'https://api.supadata.ai/v1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -157,7 +158,7 @@ const transcriptBlock = t.state === 'ok'
     : `_(TRANSCRIPT ERROR — ${t.error})_`;
 const transcriptHeading = timestamped ? '## Transcript (timestamped)' : '## Transcript';
 
-const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _fetched_at: new Date().toISOString(), _transcript_state: t.state, _transcript_timestamped: timestamped };
+const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _duration: m.media?.duration ?? m.duration ?? null, _transcript_sha: t.state === 'ok' ? transcriptSha(t.text) : null, _fetched_at: new Date().toISOString(), _transcript_state: t.state, _transcript_timestamped: timestamped };
 const fm = Object.entries(front).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
 
 const out = `---
@@ -192,3 +193,17 @@ if (t.state === 'empty') {
   process.exit(0);
 }
 console.error(`[social-fetch] wrote ${file} (transcript: yes)`);
+
+// GATE 3 — cross-platform content dedup. The id-gate is per-platform, so the SAME
+// clip cross-posted to another platform (different url + id) slips past it. Compare
+// this transcript against every other sidecar; a high match = same video reposted.
+// Needs the transcript, so it runs here (post-fetch) — it guards against a duplicate
+// PAGE, not the credit. Surfaced for a human call; never auto-skips.
+const dupes = findContentDuplicates(t.text, dir, { selfId: String(m.id) });
+if (dupes.length) {
+  console.error('[social-fetch] ⚠ POSSIBLE CROSS-PLATFORM DUPLICATE — this transcript closely matches already-saved video(s):');
+  for (const d of dupes.slice(0, 3)) {
+    console.error(`   • ${Math.round(d.similarity * 100)}% match — ${d.platform} ${d.id} — ${d.url || d.file}`);
+  }
+  console.error('[social-fetch] Creators cross-post the same clip across platforms. SURFACE TO ELLIOT: is this the same video? Prefer adding this URL as an extra source on the EXISTING concept page rather than creating a new duplicate page.');
+}
