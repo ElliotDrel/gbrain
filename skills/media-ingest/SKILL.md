@@ -176,6 +176,29 @@ plain-text transcript. This is your source material — do not re-fetch.
 
 ### Phase 3: Create brain page
 
+**CONCEPT DEDUP — build, don't duplicate (gate 4).** Gates 1-3 stop the same *video*
+being saved twice. They do NOT stop the same *idea* being saved twice from two
+different videos (different words → no shared n-grams). Idea-sameness is semantic, so
+BEFORE writing a `type: concept` page, search the brain for the proposed takeaway:
+
+```bash
+node skills/media-ingest/scripts/concept-dedup.mjs "<the core takeaway in plain words>"
+```
+
+It runs the brain's hybrid (vector) search and lists existing concept pages closest to
+the idea, with absolute paths. **Read the close ones**, then decide:
+
+- **Same core idea** → *build on the existing page* (add this video as a corroborating
+  source under `## Sources`, add any new angle/example/nuance, cross-link the creator)
+  rather than filing a near-duplicate. Re-ingest the edited page (Phase 5).
+- **Related but distinct** → file the new page AND cross-link both ways (`## See Also`),
+  so the ideas build on each other instead of sitting as disconnected twins.
+- **Novel** → file fresh.
+
+Surface the merge-vs-new call to Elliot when it's ambiguous. (Scores are RRF-fused and
+not absolute — judge by *reading*, not the number.) This applies to any concept-creating
+ingest, not just media.
+
 File by primary subject (not format). Use this template:
 
 ```markdown
