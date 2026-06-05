@@ -41,7 +41,7 @@ const SURFACE = '>>> SURFACE THIS TO THE USER. One attempt only was made — Sup
 const argv = process.argv.slice(2);
 const url = argv.find((a) => !a.startsWith('-'));
 const force = argv.includes('--force');
-const brain = (() => { const i = argv.indexOf('--brain'); return i >= 0 ? argv[i + 1] : path.join(os.homedir(), 'brain'); })();
+const brain = path.resolve((() => { const i = argv.indexOf('--brain'); return i >= 0 ? argv[i + 1] : path.join(os.homedir(), 'brain'); })()); // absolute, so every printed path is absolute
 if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>] [--force]'); process.exit(1); }
 
 // ---- dedup (deterministic, keyed by the post's canonical shortcode/id) ----
@@ -89,6 +89,29 @@ async function get(endpoint, params) {
   const res = await fetch(u, { headers: { 'x-api-key': apiKey } });
   const body = await res.json().catch(() => ({}));
   return { status: res.status, body };
+}
+
+// Find brain .md pages that cite any of `needles` (a sidecar filename or canonical
+// URL) so a duplicate flag can point the AI straight at the page to edit. Walks the
+// brain, skipping sources/ (raw sidecars) and dot-dirs. Returns absolute paths.
+function findCitingPages(brainDir, needles) {
+  const hits = new Set();
+  const skip = new Set(['sources', 'node_modules']);
+  (function walk(d) {
+    let ents = [];
+    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.name.startsWith('.')) continue;
+      const fp = path.join(d, e.name);
+      if (e.isDirectory()) { if (!skip.has(e.name)) walk(fp); }
+      else if (e.name.endsWith('.md')) {
+        let c = '';
+        try { c = fs.readFileSync(fp, 'utf8'); } catch { continue; }
+        if (needles.some((n) => c.includes(n))) hits.add(fp);
+      }
+    }
+  })(brainDir);
+  return [...hits];
 }
 
 // We request text=false so Supadata returns TIMESTAMPED segments
@@ -202,13 +225,18 @@ console.error(`[social-fetch] wrote ${file} (transcript: yes)`);
 const dupes = findContentDuplicates(t.text, dir, { selfId: String(m.id) });
 if (dupes.length) {
   const thisDur = m.media?.duration ?? m.duration ?? null;
-  console.error('[social-fetch] ⚠ POSSIBLE DUPLICATE CONTENT — this transcript matches already-saved video(s):');
+  console.error('[social-fetch] ⚠ POSSIBLE DUPLICATE CONTENT — this transcript matches already-saved video(s).');
+  console.error(`   new (just fetched): ${file}`);
   for (const d of dupes.slice(0, 3)) {
     const durs = (thisDur && d.duration) ? ` [this ~${Math.round(thisDur)}s vs saved ~${Math.round(d.duration)}s]` : '';
     const tag = d.reason === 'subset'
       ? `CLIP-OF-A-CLIP — ${Math.round(d.overlap * 100)}% of the shorter video is contained in the other${durs}`
       : `${Math.round(d.similarity * 100)}% near-identical (likely cross-platform repost)`;
-    console.error(`   • ${tag} — ${d.platform} ${d.id} — ${d.url || d.file}`);
+    console.error(`   • ${tag} — ${d.platform} ${d.id} ${d.url}`);
+    console.error(`       raw sidecar:  ${d.file}`);
+    const pages = findCitingPages(brain, [path.basename(d.file), d.url].filter(Boolean));
+    if (pages.length) for (const p of pages) console.error(`       concept page: ${p}`);
+    else console.error('       concept page: (none found — raw sidecar only; no page was filed from this match)');
   }
-  console.error('[social-fetch] SURFACE TO ELLIOT before filing. Same clip / cross-post / longer-or-shorter cut? Prefer adding this URL as an extra source on the EXISTING concept page (note the duration difference) over creating a duplicate page.');
+  console.error('[social-fetch] SURFACE TO ELLIOT before filing. Same clip / cross-post / longer-or-shorter cut? Read the files above to compare. Prefer adding this URL as an extra source on the EXISTING concept page (note any duration difference) over creating a duplicate page.');
 }

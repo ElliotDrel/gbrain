@@ -105,7 +105,7 @@ export function findContentDuplicates(transcript, dir, { selfId = null, threshol
     if (!reason) continue;
     const dur = frontVal(content, '_duration');
     out.push({
-      file: f,
+      file: path.join(dir, f),   // absolute path so the caller/AI can read it directly
       platform: frontVal(content, 'platform') || 'unknown',
       id,
       url: frontVal(content, '_canonical_url') || frontVal(content, '_source_url') || '',
