@@ -80,6 +80,19 @@ Hard rules for the whole flow:
   silently writes to the personal brain (see `AGENTS.md` → "Brains (gbrain)").
 - A new brain later → add a row to the table above. That's the only change needed.
 
+Then pick the **notes format** (the Phase-3 body structure) — independent of the brain:
+
+| Notes format | When | Body order |
+|---|---|---|
+| **standard** (default) | working/external/team meetings, calls, interviews | the Phase 3 template below |
+| **leadership** | exec/strategy conversations — founder/leader 1-on-1s, OKR/process/org syncs, board-ish calls | `formats/leadership.md` |
+
+Auto-detect **leadership** when the meeting is leaders talking about *how to run the
+org* (decisions, goals, process, people) rather than executing tasks; the user can
+override either way. When leadership is selected, Phase 3 uses the body order in
+`formats/leadership.md` instead of the standard one — everything else in the flow is
+unchanged. (New meeting type later → add a `formats/<name>.md` + a row here.)
+
 ## Contract
 
 This skill guarantees:
@@ -157,8 +170,9 @@ inbound media temp path.
 ### Phase 3: Build the meeting-notes draft (do NOT ingest yet)
 
 Write the draft to `$BRAIN_DIR/meetings/<slug>.md` with frontmatter
-(`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`) and this
-fixed body order. **Capture ALL available source metadata** — for a source-backed
+(`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`). **Use the body
+order for the notes format chosen in Step 0** — the standard order below, OR
+`formats/leadership.md` if the **leadership** format was selected. **Capture ALL available source metadata** — for a source-backed
 meeting (e.g. Fathom) that means `source`, `recording_id`, `fathom_url`, `share_url`,
 `duration_min` in frontmatter AND a `## Source & Metadata` block in the body. Don't
 drop fields the source gave you (share link, recording id, scheduled/recording times,
