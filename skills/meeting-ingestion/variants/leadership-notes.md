@@ -1,7 +1,7 @@
-# Notes format — Leadership / Exec
+# Notes variant — Leadership / Exec
 
 Use this body order (instead of the standard Phase-3 template) when Step 0 selected the
-**leadership** notes format — exec/strategy conversations where leaders decide *how to
+**leadership** notes variant — exec/strategy conversations where leaders decide *how to
 run the org*, not execute tasks. Everything else in the skill (frontmatter, `## Source &
 Metadata`, attendee enrichment, dual-brain, output variant, etc.) is unchanged; only the
 body sections differ.
