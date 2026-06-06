@@ -114,8 +114,9 @@ This skill guarantees:
 - Timeline entries on ALL mentioned entities (timeline merge).
 - A meeting is NOT fully ingested until enrich runs for every entity.
 - Back-links created bidirectionally.
-- The follow-up draft and the execution split are produced **separately, after**
-  the notes are clean — never embedded inside the meeting-notes file.
+- The situation-specific deliverable (follow-up + execution for personal, or the
+  team recap for buildpurdue — see Phase 9 and the `variants/` files) is produced
+  **separately, after** the notes are clean — never embedded inside the notes file.
 
 > **Convention:** See `skills/conventions/quality.md` for Iron Law back-linking.
 
@@ -126,7 +127,8 @@ the meeting page. An unlinked mention is a broken brain.
 
 > Phases 1–4 produce and refine the draft. Do NOT ingest into G-Brain until the
 > user approves (Phase 4). Phases 5–8 are the ingestion + enrichment work.
-> Phases 9–10 are the follow-up and execution handoff.
+> Phase 9 is the situation-specific output — routed to the variant file for the
+> brain chosen in Step 0 (personal → follow-up; buildpurdue → team recap).
 
 ### Phase 1: Parse the transcript
 
@@ -267,24 +269,20 @@ For each company, project, program, place, or concept discussed:
 The same event appears on ALL mentioned entities' timelines. If Alice met Bob at
 Acme Corp, the event goes on Alice's page, Bob's page, AND Acme Corp's page.
 
-### Phase 9: Draft the follow-up (after the notes are clean)
+### Phase 9: Situation output — route to the variant (after the notes are clean)
 
-Only now draft the follow-up message — **separately, not inside the notes file.**
-A good follow-up usually: thanks the person, reflects the most useful takeaway,
-mentions 1–2 specific points, and includes a short ask if needed. Tone: concise,
-human, not overpolished, no fake gratitude. Draft it for the user to send; don't
-auto-send.
+Phases 1–8 run the same everywhere. Only the **post-notes deliverable** differs by
+situation, selected by the brain you picked in Step 0. Read and follow the matching
+variant file:
 
-### Phase 10: Execution / planner handoff
+| Brain (Step 0) | Variant file | Post-notes deliverable |
+|---|---|---|
+| Personal/EMS (default) | `variants/personal.md` | Follow-up message + execution / planner handoff |
+| buildpurdue | `variants/buildpurdue.md` | Team recap message (ready to post to the team) |
 
-For every concrete item, decide:
-- **Do now** — truly possible in under five minutes
-- **Add to planner** — a real task (concrete verb, bounded scope, actual next move)
-
-Surface these to the user for their own planner. **Per user preference, do NOT
-auto-write tasks into the brain (no `daily-task-manager` brain-page writes) unless
-the user explicitly asks.** Execution advice must be real tasks, never vague
-targets like "get to 15 interviews."
+Open the variant file for the chosen brain and produce its deliverable as separate
+chat output (never inside the notes file). A new situation later → add a
+`variants/<name>.md` + a row here (and a brain row in Step 0 if it's a new brain).
 
 ## Output Format
 
@@ -306,8 +304,8 @@ section):
 
 Final report after ingestion + enrichment:
 "Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items
-captured." Then deliver the follow-up draft and the execution split (Phases 9–10)
-as separate chat output.
+captured." Then produce the Phase 9 situation deliverable for the chosen brain
+(personal → follow-up + execution; buildpurdue → team recap) as separate chat output.
 
 ## Anti-Patterns
 
