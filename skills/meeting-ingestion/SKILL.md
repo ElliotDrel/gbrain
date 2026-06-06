@@ -66,6 +66,11 @@ meeting goes into, from the user's request**:
 - Personal/EMS, or unspecified but clearly personal → the **default** brain.
 - **If you genuinely can't tell which brain, ASK before writing anything.** Writing
   to the wrong brain is the one unrecoverable mistake in this flow.
+- **If the meeting belongs in BOTH brains** (e.g. a call that's both a personal catch-up
+  and a buildpurdue working session), STOP and read `cross-brain.md`, then follow it: pick
+  the primary brain by relevance, ingest it fully, then do a second pass (reread the
+  transcript from scratch) into the secondary brain. The auto-monitor never does this — it's
+  manual-only.
 
 Then bind two tokens and use them for the ENTIRE rest of this skill:
 
