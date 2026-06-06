@@ -176,17 +176,19 @@ plain-text transcript. This is your source material — do not re-fetch.
 
 ### Phase 3: Create brain page
 
-**CONCEPT DEDUP — build, don't duplicate (gate 4).** Gates 1-3 stop the same *video*
-being saved twice. They do NOT stop the same *idea* being saved twice from two
-different videos (different words → no shared n-grams). Idea-sameness is semantic, so
-BEFORE writing a `type: concept` page, search the brain for the proposed takeaway:
+**CONCEPT DEDUP — build, don't duplicate (gate 4). MANDATORY — never skip.** Gates 1-3
+stop the same *video* being saved twice. They do NOT stop the same *idea* being saved
+twice from two different videos (different words → no shared n-grams). Idea-sameness is
+semantic, so BEFORE writing ANY `type: concept` page you MUST search the brain for the
+proposed takeaway using the **`query` tool** (gbrain's hybrid vector+keyword search).
 
-```bash
-node skills/media-ingest/scripts/concept-dedup.mjs "<the core takeaway in plain words>"
-```
+Run **two or three** queries phrased differently — the core takeaway in plain words,
+plus a synonym/angle variant — so a near-duplicate filed under different wording still
+surfaces. Do NOT filter to `concepts/` only: read whatever comes back (people, companies,
+meetings too), because the right home or cross-link is often a non-concept page.
 
-It runs the brain's hybrid (vector) search and lists existing concept pages closest to
-the idea, with absolute paths. **Read the close ones**, then decide:
+**Read the top hits** (don't trust the score alone — gbrain's RRF scores aren't
+normalized and can exceed 1; judge by *reading* the page), then decide:
 
 - **Same core idea** → *build on the existing page* (add this video as a corroborating
   source under `## Sources`, add any new angle/example/nuance, cross-link the creator)
@@ -195,9 +197,9 @@ the idea, with absolute paths. **Read the close ones**, then decide:
   so the ideas build on each other instead of sitting as disconnected twins.
 - **Novel** → file fresh.
 
-Surface the merge-vs-new call to Elliot when it's ambiguous. (Scores are RRF-fused and
-not absolute — judge by *reading*, not the number.) This applies to any concept-creating
-ingest, not just media.
+Surface the merge-vs-new call to Elliot when it's ambiguous. This applies to any
+concept-creating ingest, not just media. **Quote the queries you ran and the top hits
+in your report**, so the dedup decision is auditable.
 
 File by primary subject (not format). Use this template:
 
