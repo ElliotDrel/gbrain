@@ -90,12 +90,17 @@ Then pick the **notes variant** (the Phase-3 body structure) — independent of 
 | Notes variant | When | Body order |
 |---|---|---|
 | **standard** (default) | working/external/team meetings, calls, interviews | the Phase 3 template below |
-| **leadership** | exec/strategy conversations — founder/leader 1-on-1s, OKR/process/org syncs, board-ish calls | `variants/leadership-notes.md` |
+| **leadership** | exec/strategy conversations — org-level: leaders deciding *how to run the org* (OKR/process/org syncs, board-ish calls) | `variants/leadership-notes.md` |
+| **one-on-one** | person-level 1-on-1s — mentor/manager ↔ report/peer: coaching, checking in on someone's work, unblocking them, tactical working session | `variants/one-on-one-notes.md` |
 
 Auto-detect **leadership** when the meeting is leaders talking about *how to run the
-org* (decisions, goals, process, people) rather than executing tasks; the user can
-override either way. When leadership is selected, Phase 3 uses the body order in
-`variants/leadership-notes.md` instead of the standard one — everything else in the flow
+org* (decisions, goals, process, people) rather than executing tasks. Auto-detect
+**one-on-one** when it's two people in a mentor/manager ↔ report/peer check-in —
+coaching, reviewing one person's work, unblocking them — rather than an org-level
+decision forum (a founder *coaching* a teammate on OKRs is one-on-one; founders
+*deciding* the OKR process together is leadership). The user can override either way.
+When a variant is selected, Phase 3 uses that variant's body order
+instead of the standard one — everything else in the flow
 is unchanged. (New notes variant later → add a `variants/<type>-notes.md` + a row here.)
 
 ## Contract
