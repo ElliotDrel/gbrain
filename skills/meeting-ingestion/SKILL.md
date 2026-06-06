@@ -137,9 +137,9 @@ This skill guarantees:
 - Timeline entries on ALL mentioned entities (timeline merge).
 - A meeting is NOT fully ingested until enrich runs for every entity.
 - Back-links created bidirectionally.
-- The situation-specific deliverable (follow-up + execution for personal, or the
-  team recap for buildpurdue — see Phase 9 and the `variants/` files) is produced
-  **separately, after** the notes are clean — never embedded inside the notes file.
+- A follow-up is always produced (Phase 9, routed by meeting type → `followups/`), plus
+  an execution split when there are action items (Phase 10, `execution-split.md`) — both
+  **separately, after** the notes are clean, never embedded inside the notes file.
 
 > **Convention:** See `skills/conventions/quality.md` for Iron Law back-linking.
 
@@ -150,8 +150,8 @@ the meeting page. An unlinked mention is a broken brain.
 
 > Phases 1–4 produce and refine the draft. Do NOT ingest into G-Brain until the
 > user approves (Phase 4). Phases 5–8 are the ingestion + enrichment work.
-> Phase 9 is the situation-specific output — routed to the variant file for the
-> brain chosen in Step 0 (personal → follow-up; buildpurdue → team recap).
+> Phase 9 always produces a follow-up (routed by meeting type → `followups/`).
+> Phase 10 runs the execution split (do-now vs task manager) when there are action items.
 
 ### Phase 1: Parse the transcript
 
@@ -304,20 +304,28 @@ For each company, project, program, place, or concept discussed:
 The same event appears on ALL mentioned entities' timelines. If Alice met Bob at
 Acme Corp, the event goes on Alice's page, Bob's page, AND Acme Corp's page.
 
-### Phase 9: Situation output — route to the variant (after the notes are clean)
+### Phase 9: Follow-up (always) — route to the follow-up method
 
-Phases 1–8 run the same everywhere. Only the **post-notes deliverable** differs by
-situation, selected by the brain you picked in Step 0. Read and follow the matching
-variant file:
+Phases 1–8 run the same everywhere. **Every meeting gets a follow-up.** The *method*
+is chosen by **meeting type**, not brain — read and follow the matching file in
+`followups/`, and produce it as separate chat output (never inside the notes file):
 
-| Brain (Step 0) | Variant file | Post-notes deliverable |
+| Meeting type | Follow-up method file | Deliverable |
 |---|---|---|
-| Personal/EMS (default) | `variants/default-personal.md` | Follow-up message + execution / planner handoff |
-| buildpurdue | `variants/team-recap-buildpurdue.md` | Team recap message (ready to post to the team) |
+| **Default** (1-on-1s, external, interviews, personal/EMS, buildpurdue non-team) | `followups/follow-up-message.md` | Personalized follow-up message to the other party |
+| buildpurdue **weekly team meeting** | `followups/team-recap.md` | Team recap message (ready to post to the team) |
 
-Open the variant file for the chosen brain and produce its deliverable as separate
-chat output (never inside the notes file). A new situation later → add a
-`variants/<name>.md` + a row here (and a brain row in Step 0 if it's a new brain).
+Default to the **follow-up message**; use the team recap ONLY for the buildpurdue weekly
+team meeting. (A buildpurdue 1-on-1 gets a follow-up message, not a recap.) A new method
+later → add a `followups/<name>.md` + a row here.
+
+### Phase 10: Execution split (only if the meeting has action items)
+
+If the meeting produced **Action Items**, read and follow `execution-split.md`: split
+each into **Do now** (do it immediately) vs **Track** (add to the brain's task manager),
+**propose the split to the user, and add tasks only on their confirm** (only the user's
+own items, into the meeting's brain). Skip this phase entirely if there are no action
+items. This runs independently of the follow-up.
 
 ## Output Format
 
@@ -339,8 +347,9 @@ section):
 
 Final report after ingestion + enrichment:
 "Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items
-captured." Then produce the Phase 9 situation deliverable for the chosen brain
-(personal → follow-up + execution; buildpurdue → team recap) as separate chat output.
+captured." Then produce the Phase 9 follow-up (default: follow-up message; buildpurdue
+team meeting: team recap) and, if there are action items, the Phase 10 execution split
+(propose → confirm → add) as separate chat output.
 
 ## Anti-Patterns
 
