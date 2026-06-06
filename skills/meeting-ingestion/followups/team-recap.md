@@ -1,9 +1,10 @@
-# Meeting-ingestion variant — buildpurdue (team recap)
+# Follow-up method — Team recap (buildpurdue team meeting only)
 
-Use this variant when the meeting was ingested into the **buildpurdue brain**.
-Instead of a personal follow-up, produce a **team recap message** to post to the
-team (Slack). Run only AFTER the notes are approved + ingested (router `SKILL.md`
-Phases 1–8). Output ONLY the recap message, ready to paste — no meta-commentary.
+Use this **only** for the buildpurdue weekly **team meeting** — a recap posted to the
+whole team (Slack). Every other meeting (including buildpurdue 1-on-1s) uses
+`follow-up-message.md`. Run only AFTER the notes are approved + ingested (router
+`SKILL.md` Phases 1–8). Output ONLY the recap message, ready to paste — no
+meta-commentary.
 
 ## Goal & tone
 A quick, actionable summary — what was covered + clear action items with due dates.
@@ -48,3 +49,5 @@ __**Action items due [next meeting, e.g. Sat]:**__
   have any questions" closing — end on the next-meeting line.
 - This recap is posted to the whole team (Slack), so use markdown the surface
   supports (`#`, `-`, `**bold**`, `__underline__`).
+- Task/execution handling (do-now vs task manager) is the shared `execution-split.md`
+  step, run separately — the recap itself just lists the action items for the team.
