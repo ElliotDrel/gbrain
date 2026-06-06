@@ -158,14 +158,25 @@ inbound media temp path.
 
 Write the draft to `$BRAIN_DIR/meetings/<slug>.md` with frontmatter
 (`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`) and this
-fixed body order:
+fixed body order. **Capture ALL available source metadata** — for a source-backed
+meeting (e.g. Fathom) that means `source`, `recording_id`, `fathom_url`, `share_url`,
+`duration_min` in frontmatter AND a `## Source & Metadata` block in the body. Don't
+drop fields the source gave you (share link, recording id, scheduled/recording times,
+language, recorded-by, attendee emails) — capture more, not less.
 
 ```markdown
 # {Meeting Title} — {Date}
 
-**Attendees:** {list with [links](people/slug) to people pages}
-**Date:** {YYYY-MM-DD}
-**Format:** {phone/in-person/etc., if known}
+**Attendees:** {list with [links](people/slug) <emails if known>}
+**Date:** {YYYY-MM-DD} · **Format:** {phone/in-person/virtual} · {~duration if known}
+
+## Source & Metadata
+{For source-backed meetings (Fathom etc.) — include every field the source provides:}
+- **Source:** {fathom} · **Recording ID:** {id} · **Language:** {en}
+- **Recording link:** {url} · **Share link:** {share_url}
+- **Scheduled:** {start–end} · **Recorded:** {start–end} (~{N} min)
+- **Recorded by:** {email}
+{Omit this whole section only for meetings with no source metadata.}
 
 ## Executive Summary
 {tight skim-first paragraph: what it was about, what mattered, what changed/decided}
