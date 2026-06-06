@@ -302,8 +302,8 @@ variant file:
 
 | Brain (Step 0) | Variant file | Post-notes deliverable |
 |---|---|---|
-| Personal/EMS (default) | `variants/personal.md` | Follow-up message + execution / planner handoff |
-| buildpurdue | `variants/buildpurdue.md` | Team recap message (ready to post to the team) |
+| Personal/EMS (default) | `variants/default-personal.md` | Follow-up message + execution / planner handoff |
+| buildpurdue | `variants/team-recap-buildpurdue.md` | Team recap message (ready to post to the team) |
 
 Open the variant file for the chosen brain and produce its deliverable as separate
 chat output (never inside the notes file). A new situation later → add a
