@@ -4540,7 +4540,7 @@ export class PostgresEngine implements BrainEngine {
     const [h] = await sql`
       WITH entity_pages AS (
         -- reference:true pages are exempt from coverage metrics.
-        -- Inlined (postgres.js tagged template ${} = bound param, not raw SQL);
+        -- Inlined (postgres.js tagged-template dollar-brace = bound param, not raw SQL);
         -- keep in sync with referenceExclusionSql() in reference-flag.ts.
         SELECT id, slug FROM pages WHERE type IN ('person', 'company')
           AND (frontmatter->>'reference') IS DISTINCT FROM 'true'
