@@ -56,6 +56,21 @@ writes_to:
 > + follow-up + execution behavior that used to live in the separate
 > `post-meeting-flow` skill.
 
+## Brain target (parameter — which brain you're writing to)
+
+This skill is **brain-agnostic**. Before you start, fix the target brain:
+
+- **`$BRAIN_DIR`** = the target brain's content root, used for every file path below.
+  - **Personal/EMS (default):** `$BRAIN_DIR=/home/supe/brain`, and run gbrain plainly (`gbrain …`).
+  - **buildpurdue:** `$BRAIN_DIR=/home/supe/buildpurdue-brain`, and run gbrain scoped via
+    `scripts/bp-gbrain …` (= `GBRAIN_HOME=/home/supe/buildpurdue-brain gbrain …`).
+
+Rules for the whole flow: write every page/file under `$BRAIN_DIR/…`; run every
+`gbrain` command **scoped to the target brain** (default → plain `gbrain`; any other
+brain → its `GBRAIN_HOME`/wrapper). **Never use `--brain`** — it silently falls back
+to the personal brain (see `AGENTS.md` → "Brains (gbrain)"). The `$BRAIN_DIR` and
+`gbrain` tokens below are placeholders — substitute per the target brain.
+
 ## Contract
 
 This skill guarantees:
@@ -130,7 +145,7 @@ inbound media temp path.
 
 ### Phase 3: Build the meeting-notes draft (do NOT ingest yet)
 
-Write the draft to `/home/supe/brain/meetings/<slug>.md` with frontmatter
+Write the draft to `$BRAIN_DIR/meetings/<slug>.md` with frontmatter
 (`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`) and this
 fixed body order:
 
@@ -186,7 +201,7 @@ Show the user the current draft and iterate until it's right. **This is not
 optional, and it happens before any G-Brain ingestion.**
 
 When showing the notes, attach the **actual canonical brain page file at its real
-in-brain path** (`/home/supe/brain/meetings/<slug>.md`) — the same file being
+in-brain path** (`$BRAIN_DIR/meetings/<slug>.md`) — the same file being
 edited in place, the same path on every iteration. Never attach a temp copy, a
 regenerated duplicate, or an inbound-media path. If the surface can't attach,
 quote the relevant sections and give that same path.
@@ -203,7 +218,7 @@ serves) is a separate store; a working-tree edit doesn't reach it. Push the
 approved file into the engine explicitly:
 
 ```bash
-gbrain capture --file /home/supe/brain/meetings/<slug>.md --slug meetings/<slug> --type meeting
+gbrain capture --file $BRAIN_DIR/meetings/<slug>.md --slug meetings/<slug> --type meeting
 ```
 
 Then verify the engine matches the reviewed file before declaring it ingested:
