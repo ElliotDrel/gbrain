@@ -56,20 +56,29 @@ writes_to:
 > + follow-up + execution behavior that used to live in the separate
 > `post-meeting-flow` skill.
 
-## Brain target (parameter — which brain you're writing to)
+## Step 0 — pick the target brain (DO THIS FIRST)
 
-This skill is **brain-agnostic**. Before you start, fix the target brain:
+This skill is **brain-agnostic**. Before anything else, decide **which brain this
+meeting goes into, from the user's request**:
 
-- **`$BRAIN_DIR`** = the target brain's content root, used for every file path below.
-  - **Personal/EMS (default):** `$BRAIN_DIR=/home/supe/brain`, and run gbrain plainly (`gbrain …`).
-  - **buildpurdue:** `$BRAIN_DIR=/home/supe/buildpurdue-brain`, and run gbrain scoped via
-    `scripts/bp-gbrain …` (= `GBRAIN_HOME=/home/supe/buildpurdue-brain gbrain …`).
+- User named it (e.g. "buildpurdue meeting") or the meeting clearly belongs to a
+  specific brain → use that brain.
+- Personal/EMS, or unspecified but clearly personal → the **default** brain.
+- **If you genuinely can't tell which brain, ASK before writing anything.** Writing
+  to the wrong brain is the one unrecoverable mistake in this flow.
 
-Rules for the whole flow: write every page/file under `$BRAIN_DIR/…`; run every
-`gbrain` command **scoped to the target brain** (default → plain `gbrain`; any other
-brain → its `GBRAIN_HOME`/wrapper). **Never use `--brain`** — it silently falls back
-to the personal brain (see `AGENTS.md` → "Brains (gbrain)"). The `$BRAIN_DIR` and
-`gbrain` tokens below are placeholders — substitute per the target brain.
+Then bind two tokens and use them for the ENTIRE rest of this skill:
+
+| Brain | `$BRAIN_DIR` (content root — every file path) | `$GB` (every brain command) |
+|---|---|---|
+| Personal/EMS (default) | `/home/supe/brain` | `gbrain` |
+| buildpurdue | `/home/supe/buildpurdue-brain` | `scripts/bp-gbrain`  (= `GBRAIN_HOME=/home/supe/buildpurdue-brain gbrain`) |
+
+Hard rules for the whole flow:
+- Every file/page path = `$BRAIN_DIR/…`. Every brain command = `$GB …`.
+- **Never run a bare `gbrain` for a non-default brain, and NEVER use `--brain`** — it
+  silently writes to the personal brain (see `AGENTS.md` → "Brains (gbrain)").
+- A new brain later → add a row to the table above. That's the only change needed.
 
 ## Contract
 
@@ -92,7 +101,7 @@ This skill guarantees:
 - The `Key Decisions` and `Learnings or Useful Later` sections are both optional
   — omit either entirely if nothing qualifies.
 - The raw transcript is preserved in G-Brain via
-  `gbrain files upload-raw <file> --page meetings/<slug> --type transcript`, which
+  `$GB files upload-raw <file> --page meetings/<slug> --type transcript`, which
   creates a git-tracked `.raw/` sidecar next to the meeting page.
 - The raw transcript is NOT a standalone body section. Provenance is a
   `raw_transcript:` pointer in the page **frontmatter** (a brain-relative path
@@ -134,7 +143,7 @@ Extract from the transcript:
 ### Phase 2: Preserve the raw transcript (no body section)
 
 ```bash
-gbrain files upload-raw <file> --page meetings/<slug> --type transcript
+$GB files upload-raw <file> --page meetings/<slug> --type transcript
 ```
 
 For normal text transcripts this produces a git-tracked `.raw/` sidecar dir next
@@ -218,13 +227,13 @@ serves) is a separate store; a working-tree edit doesn't reach it. Push the
 approved file into the engine explicitly:
 
 ```bash
-gbrain capture --file $BRAIN_DIR/meetings/<slug>.md --slug meetings/<slug> --type meeting
+$GB capture --file $BRAIN_DIR/meetings/<slug>.md --slug meetings/<slug> --type meeting
 ```
 
 Then verify the engine matches the reviewed file before declaring it ingested:
 
 ```bash
-gbrain get meetings/<slug> | grep -E '^## '   # headings must match the file
+$GB get meetings/<slug> | grep -E '^## '   # headings must match the file
 ```
 
 If headings or `raw_transcript` differ, re-ingest until they match. Do not trust
@@ -233,16 +242,16 @@ the on-disk file as proof of ingestion.
 ### Phase 6: Attendee enrichment (MANDATORY)
 
 For EACH attendee:
-1. `gbrain search "{name}"` — does a people page exist?
+1. `$GB search "{name}"` — does a people page exist?
 2. If NO → create via enrich skill (mandatory, not optional)
 3. If YES → update compiled truth with meeting context
 4. Add a timeline entry on the person's page:
-   `gbrain timeline-add <person-slug> <date> "Attended <meeting-title>"`
+   `$GB timeline-add <person-slug> <date> "Attended <meeting-title>"`
 
 **Note:** Once the meeting page is ingested, the auto-link post-hook creates
 `attended` links from the meeting to each attendee referenced as
-`[Name](people/slug)`. You don't need `gbrain link` for attendees. You DO still
-need `gbrain timeline-add` for dated events (auto-link handles links, not timeline
+`[Name](people/slug)`. You don't need `$GB link` for attendees. You DO still
+need `$GB timeline-add` for dated events (auto-link handles links, not timeline
 entries).
 
 ### Phase 7: Entity propagation (MANDATORY)
@@ -320,7 +329,7 @@ as separate chat output.
 - Embedding the follow-up draft or the execution split inside the meeting-notes file
 - Drafting the follow-up before the meeting page is clean
 - Treating a filesystem `.md` edit as ingestion — the engine is a separate store;
-  ingest via `gbrain capture`/`put`, then verify with `gbrain get`
+  ingest via `$GB capture`/`put`, then verify with `$GB get`
 - Creating the meeting page without enriching attendees
 - Skipping entity propagation ("I'll do that later")
 - Not merging timelines across all mentioned entities
