@@ -175,6 +175,11 @@
       "description": "Keep gbrain current: act on the UPGRADE_AVAILABLE marker per self_upgrade.mode (notify prompt or silent auto)"
     },
     {
+      "name": "upgrade-resolve",
+      "path": "upgrade-resolve/SKILL.md",
+      "description": "Re-apply local gbrain patches after an upstream-wins `gbrain upgrade`: read the backup manifest, get user approval, reconstruct each patch's intent (Section A/B from PATCH.md) onto the new upstream code, typecheck-gate, then propagate skills to the workspace."
+    },
+    {
       "name": "book-mirror",
       "path": "book-mirror/SKILL.md",
       "description": "Take any book (EPUB/PDF), produce a personalized chapter-by-chapter analysis with two-column tables: left = chapter summary, right = how it applies to you based on brain context. Output: brain page + PDF."

@@ -24,6 +24,15 @@ file conflicts, the upgrade keeps the UPSTREAM version and backs up the patched
 version. This skill re-applies the patch intent afterward. It NEVER runs
 unattended.
 
+## Contract
+
+This skill guarantees:
+- Nothing changes without explicit user approval (mandatory stop before any edit).
+- Re-applies each patch's INTENT onto the new upstream code -- never pastes old lines back.
+- Classifies every conflict via its PATCH.md entry (Section A permanent vs Section B ephemeral) and DROPS bug fixes upstream has since fixed.
+- Typecheck-gated: a re-application that fails typecheck is reverted and flagged, never left broken.
+- Propagates updated skills to the live workspace and reports rollback points (backupRef + backup dir).
+
 ## Hard rules
 
 1. **Ask the user before changing anything.** Show what conflicted and what you
@@ -113,3 +122,23 @@ Report exactly: which files were re-applied and HOW the new code differs from
 the old patch, which were skipped as upstreamed, which were flagged and why,
 verify-gate result, the **workspace propagation result** (step 6: skills updated),
 and the rollback points (`backupRef`, backup dir).
+
+## Output Format
+
+A final briefing (step 7), per conflicted file:
+- **Re-applied:** `<file>` -- how the new code differs from the old patch.
+- **Skipped (upstreamed):** `<file>` -- PATCH.md entry marked `Status: retired`.
+- **Flagged:** `<file>` -- why it could not be auto-re-applied (the three reference points).
+
+Then: verify-gate result (`bun run typecheck` pass/fail), workspace propagation result
+(step 6), and rollback points (`backupRef`, backup dir).
+
+## Anti-Patterns
+
+- Running unattended or editing any file before the user approves (violates Hard rule 1).
+- Pasting old patch text back verbatim instead of reconstructing intent on the new upstream code.
+- Re-applying a Section B bug fix that upstream already fixed -- creates two conflicting
+  solutions to one problem; upstream's fix is authoritative.
+- Declaring done without the typecheck gate, or leaving a typecheck-failing re-application in place.
+- Skipping step 6, so the fork is committed but the live workspace never gets the updated skills.
+- Deleting the backup directory before the user has confirmed the result.
