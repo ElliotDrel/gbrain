@@ -1,10 +1,14 @@
-# Notes variant — One-on-One
+# Notes variant — Leadership 1-on-1
 
 Use this body order (instead of the standard Phase-3 template) when Step 0 selected the
-**one-on-one** notes variant — a mentor/manager ↔ report/peer 1-on-1: coaching, checking
-in on someone's work, unblocking them, tactical working session. This is **person-level**
-(one person's work, growth, blockers), as opposed to the **leadership** variant which is
-**org-level** (execs deciding how to run the org).
+**leadership-1on1** notes variant — a 1-on-1 you run **as the leader with a teammate /
+direct report**: coaching them, checking in on their work, unblocking them, a tactical
+working session. This is **person-level** (one teammate's work, growth, blockers), as
+opposed to the **leadership** variant which is **org-level** (execs deciding how to run
+the org).
+
+Scope check: this is for leading *your own* teammate. A peer or external advice/networking
+1-on-1 (someone who isn't your report) is NOT this — use the **standard** variant for those.
 
 Everything else in the skill (frontmatter, `## Source & Metadata`, attendee enrichment,
 dual-brain mode, output variant, etc.) is unchanged; only the body sections differ.
