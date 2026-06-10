@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const envPath = path.join(os.homedir(), '.openclaw', '.env');
+const KEY_NAMES = ['SCRAPECREATORS_API_KEY', 'SCRAPE_CREATORS_API_KEY'];
 
 function resolveFromDotEnv() {
   try {
@@ -15,10 +16,12 @@ function resolveFromDotEnv() {
     for (const line of raw.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) continue;
-      const match = trimmed.match(/^SCRAPECREATORS_API_KEY=(.*)$/);
-      if (!match) continue;
-      const value = match[1].trim().replace(/^['"]|['"]$/g, '');
-      if (value) return value;
+      for (const name of KEY_NAMES) {
+        const match = trimmed.match(new RegExp(`^${name}=(.*)$`));
+        if (!match) continue;
+        const value = match[1].trim().replace(/^['"]|['"]$/g, '');
+        if (value) return value;
+      }
     }
   } catch {
     return null;
@@ -26,9 +29,12 @@ function resolveFromDotEnv() {
   return null;
 }
 
-const key = process.env.SCRAPECREATORS_API_KEY || resolveFromDotEnv();
+const key =
+  process.env.SCRAPECREATORS_API_KEY ||
+  process.env.SCRAPE_CREATORS_API_KEY ||
+  resolveFromDotEnv();
 if (!key) {
-  console.error('No SCRAPECREATORS_API_KEY found.');
+  console.error('No SCRAPECREATORS_API_KEY / SCRAPE_CREATORS_API_KEY found.');
   process.exit(2);
 }
 
