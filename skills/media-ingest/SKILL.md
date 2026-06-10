@@ -68,7 +68,9 @@ This skill guarantees:
 - Social raw stays disk-only provenance: `.txt`, never `.md`, never synced into
   the engine
 - When the user saved a social/video item intentionally, ask why they saved it
-  and preserve their exact phrasing under `## Why I Saved This`
+  and preserve Elliot's exact phrasing under `## Why I Saved This` only after
+  he gives it; build everything else first, but omit that section entirely until
+  you have his words and keep following up until you get them
 
 > **Convention:** See `skills/conventions/quality.md` for Iron Law back-linking.
 
@@ -258,9 +260,10 @@ ask Elliot directly:
 2. **Any notes or takeaways you want to highlight** — what hit hardest, what you
    want to remember?
 
-Wait for his reply and capture his **exact phrasing**. This becomes the
-`## Why I Saved This` section. If he has nothing to add, omit the section rather
-than inventing one.
+Wait for Elliot's reply and capture his **exact phrasing**. This becomes the
+`## Why I Saved This` section. Until he gives it, build the rest of the page
+first, omit that section entirely, and keep following up rather than inventing
+a reason or dropping in a placeholder.
 
 Lead with `## Summary`, then the user's voice:
 
@@ -332,11 +335,14 @@ page at {path}, {N} entities propagated."
 
 ## Anti-Patterns
 
-- **Inferring / fabricating `## Why I Saved This`.** This is the user's own signal —
-  the one thing only they can answer. NEVER guess it from the content, the author, or a
-  cluster of prior saves. Ask for it (while the fetch runs, not as a gate), and until the
-  user gives their words, leave an explicit placeholder (`_Pending <user>'s own words — not
-  inferred._`). A guessed reason pollutes the page with words the user never said.
+- **Inferring / fabricating `## Why I Saved This`.** This is Elliot's own signal --
+  the one thing only he can answer. NEVER guess it from the content, the author, or a
+  cluster of prior saves. Ask for it (while the fetch runs, not as a gate), finish the
+  rest of the page first, and until Elliot gives his words, omit the section entirely and
+  keep following up. A guessed reason pollutes the page with words Elliot never said.
+- **Writing a placeholder `## Why I Saved This` section.** Do not write the section at all
+  until Elliot has given his exact words. No stand-in text, no inferred summary, no
+  `_Pending ..._` marker inside the page.
 - Dumping raw transcripts without analysis
 - Skipping entity extraction ("I'll do that separately")
 - Two files for a social/video raw (separate transcript + metadata). One raw
