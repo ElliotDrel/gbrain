@@ -110,7 +110,6 @@ function normalizeInstagramMetadata(body) {
     : '';
   const owner = media.owner || {};
   return {
-    ...body,
     platform: 'instagram',
     id: firstDefined(media.id, media.shortcode),
     title: firstDefined(media.accessibility_caption, caption.slice(0, 120), titleFallback('instagram', owner.username, media.product_type === 'clips' ? 'reel' : 'post')),
@@ -143,7 +142,6 @@ function normalizeTikTokMetadata(body) {
   const video = detail.video || {};
   const stats = detail.statistics || {};
   return {
-    ...body,
     platform: 'tiktok',
     id: firstDefined(detail.aweme_id, body.id),
     title: firstDefined(detail.desc, titleFallback('tiktok', author.unique_id || author.nickname, 'video')),
@@ -175,7 +173,6 @@ function normalizeTikTokMetadata(body) {
 function normalizeYouTubeMetadata(body) {
   const channel = body?.channel || {};
   return {
-    ...body,
     platform: 'youtube',
     id: firstDefined(body.id, body.videoId),
     title: firstDefined(body.title, titleFallback('youtube', channel.handle || channel.title, body.type)),
@@ -206,7 +203,6 @@ function normalizeTwitterMetadata(body) {
   const legacy = body?.legacy || {};
   const media = legacy?.extended_entities?.media?.[0] || legacy?.entities?.media?.[0] || {};
   return {
-    ...body,
     platform: 'x',
     id: firstDefined(body.rest_id, legacy.id_str),
     title: titleFallback('x', legacy.user_id_str, media.type || 'post'),
@@ -240,7 +236,6 @@ function normalizeFacebookMetadata(body) {
   const author = body?.author || {};
   const video = body?.video || {};
   return {
-    ...body,
     platform: 'facebook',
     id: firstDefined(body.post_id, video.id),
     title: titleFallback('facebook', author.name, video.id ? 'reel' : 'post'),
