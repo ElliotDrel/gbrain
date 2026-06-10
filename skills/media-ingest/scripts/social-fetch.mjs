@@ -90,7 +90,11 @@ if (!platform) {
   process.exit(3);
 }
 
-const meta = await getMetadata(apiKey, platform, url);
+// Use the canonical URL for API calls — providers (e.g. ScrapeCreators) reject
+// some valid input shapes like IG `/reels/<id>` and require the normalized
+// `/reel/<id>`. The resolver already produced that canonical form.
+const fetchUrl = canon?.canonicalUrl || url;
+const meta = await getMetadata(apiKey, platform, fetchUrl);
 if (meta.status !== 200 || !meta.body?.id) {
   console.error(`[social-fetch] METADATA ERROR — HTTP ${meta.status}: ${JSON.stringify(meta.body)}`);
   console.error(SURFACE);
@@ -105,7 +109,7 @@ const keyId = canon?.id || m.id;
 // GATE 2 — authoritative backstop on the canonical id, before the costly
 // transcript call. Catches URL shapes GATE 1's regex didn't recognize.
 skipIfDuplicate(keyId, 'metadata-id');
-const t = await getTranscript(apiKey, platform, url);
+const t = await getTranscript(apiKey, platform, fetchUrl);
 const id = sanitizeId(keyId);
 const dir = socialDir;
 fs.mkdirSync(dir, { recursive: true });
