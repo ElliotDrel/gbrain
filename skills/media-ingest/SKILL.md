@@ -61,8 +61,8 @@ This skill guarantees:
 - Entity extraction: every person and company mentioned gets back-linked
 - Raw source files preserved via `gbrain files upload-raw`
 - Filing by primary subject, not by media format
-- Social-media / short-form video URLs (YouTube, TikTok, Instagram, X, Facebook,
-  public video files) go through the SAME skill via a deterministic ScrapeCreators
+- Social-media / short-form video URLs (YouTube, TikTok, Instagram, X, Facebook)
+  go through the SAME skill via a deterministic ScrapeCreators
   fetch that captures transcript **and** complete metadata in **one** raw file at
   `sources/social/<platform>-<id>.txt`
 - Social raw stays disk-only provenance: `.txt`, never `.md`, never synced into
@@ -82,7 +82,7 @@ Every mention of a person or company with a brain page MUST create a back-link.
 
 | Format | Action |
 |--------|--------|
-| Social/video URL (YouTube, TikTok, Instagram, X, Facebook, public video file) | Run deterministic ScrapeCreators fetch: `node skills/media-ingest/scripts/get-supadata-key.mjs \| node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin` |
+| Social/video URL (YouTube, TikTok, Instagram, X, Facebook) | Run deterministic ScrapeCreators fetch: `node skills/media-ingest/scripts/get-supadata-key.mjs \| node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin` |
 | Audio file | Transcribe with available STT service |
 | PDF | Extract text (OCR if needed) |
 | Book PDF | Extract text, identify chapters/sections |
