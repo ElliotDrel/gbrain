@@ -80,7 +80,7 @@ Every mention of a person or company with a brain page MUST create a back-link.
 
 | Format | Action |
 |--------|--------|
-| Social/video URL (YouTube, TikTok, Instagram, X, Facebook, public video file) | Run deterministic Supadata fetch: `node skills/media-ingest/scripts/social-fetch.mjs "<url>"` |
+| Social/video URL (YouTube, TikTok, Instagram, X, Facebook, public video file) | Run deterministic Supadata fetch: `node skills/media-ingest/scripts/get-supadata-key.mjs \| node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin` |
 | Audio file | Transcribe with available STT service |
 | PDF | Extract text (OCR if needed) |
 | Book PDF | Extract text, identify chapters/sections |
@@ -94,12 +94,13 @@ Do NOT route to another top-level skill first.
 
 ```bash
 # Run from the workspace root (the agent's cwd). The script lives WITH this skill.
-node skills/media-ingest/scripts/social-fetch.mjs "<url>"
+node skills/media-ingest/scripts/get-supadata-key.mjs \
+  | node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin
 ```
 
 - Works for YouTube, TikTok, Instagram, X (Twitter), Facebook, and public video
   file URLs via Supadata's `/transcript` + `/metadata` endpoints
-- Reuses `SUPADATA_API_KEY` from env or `~/.openclaw/openclaw.json`
+- Reuses `SUPADATA_API_KEY` from env or `~/.openclaw/openclaw.json` via the local helper
 - Idempotent path: same `<platform>-<id>` overwrites, never duplicates
 - Prints the absolute raw-file path on stdout when a file is written
 
@@ -142,13 +143,16 @@ credit. When you see it:
 - It never auto-skips — cross-platform sameness is a judgment call, so it's
   surfaced, not enforced.
 
-**ONE ATTEMPT — credits are billed per request.** The script never retries.
-Exit codes: `0` ok / already-ingested · `1` usage · `2` no api key · `3` metadata
-error · `4` transcript error. On **any** non-zero exit (or a `>>> SURFACE THIS TO
-THE USER` line on stderr):
+**ONE INVOCATION — credits are billed per request.** The caller should not
+blindly re-run the script. For Supadata `internal-error` transcript failures,
+the script now performs the vendor-style backoff **within the same invocation**
+(wait 5s, then 30s, then 60s, then give up). Exit codes: `0` ok /
+already-ingested · `1` usage · `2` no api key · `3` metadata error · `4`
+transcript error. On **any** non-zero exit (or a `>>> SURFACE THIS TO THE USER`
+line on stderr):
 
-- **STOP.** Do NOT re-run the script and do NOT hand-write a raw file to paper
-  over it
+- **STOP.** Do NOT re-run the script again and do NOT hand-write a raw file to
+  paper over it
 - **Surface the exact failure to Elliot** — the HTTP status code and the error
   body the script printed
 - Only proceed on exit `0` **with a transcript**. If exit `0` but the transcript
