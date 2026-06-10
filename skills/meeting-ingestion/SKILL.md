@@ -92,13 +92,18 @@ Then pick the **notes variant** (the Phase-3 body structure) — independent of 
 | **standard** (default) | working/external/team meetings, calls, interviews | the Phase 3 template below |
 | **leadership** | exec/strategy conversations — org-level: leaders deciding *how to run the org* (OKR/process/org syncs, board-ish calls) | `variants/leadership-notes.md` |
 | **leadership-1on1** | a 1-on-1 you run **as the leader with your teammate/report** — coaching, checking in on their work, unblocking them. (Peer/external advice calls use **standard**.) | `variants/leadership-1on1-notes.md` |
+| **co-working** | you and a teammate **building a deliverable together in real time** — an interview/question doc, OKR doc, event plan, spec, process. Artifact-centric; carries the leadership lens by default. | `variants/co-working-notes.md` |
 
 Auto-detect **leadership** when the meeting is leaders talking about *how to run the
 org* (decisions, goals, process, people) rather than executing tasks. Auto-detect
 **leadership-1on1** when it's the user running a 1-on-1 **with their own teammate/report** —
 coaching, reviewing that person's work, unblocking them (a founder *coaching a teammate*
 on OKRs is leadership-1on1; founders *deciding* the OKR process together is leadership;
-a peer/external advice call is **standard**). The user can override either way.
+a peer/external advice call is **standard**). Auto-detect **co-working** when the user and
+a teammate are **producing an artifact in the session itself** (drafting the doc, building
+the plan) rather than discussing or deciding in the abstract — the giveaway is a concrete
+deliverable taking shape live. Co-working outranks leadership for a build session (it's
+leadership-framed already). The user can override any of these.
 When a variant is selected, Phase 3 uses that variant's body order
 instead of the standard one — everything else in the flow
 is unchanged. (New notes variant later → add a `variants/<type>-notes.md` + a row here.)
