@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Local-only helpers for social-fetch.mjs. Kept separate from Supadata network
+// Local-only helpers for social-fetch.mjs. Kept separate from provider network
 // calls so audits can distinguish disk provenance logic from outbound traffic.
 
 import fs from 'node:fs';

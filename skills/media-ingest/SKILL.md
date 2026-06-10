@@ -4,7 +4,7 @@ version: 1.0.0
 description: |
   Ingest social-media, video, audio, PDF, book, screenshot, and GitHub repo
   content into the brain. Multi-format handling with entity extraction and
-  backlink propagation. Covers Supadata-backed social/video ingest plus generic
+  backlink propagation. Covers ScrapeCreators-backed social/video ingest plus generic
   media subtypes.
 triggers:
   - "watch this video"
@@ -20,7 +20,7 @@ triggers:
   - "transcribe this video"
   - "save this short"
   - "process this x video"
-  - "supadata this"
+  - "scrapecreators this"
   - "ingest this PDF"
   - "save this podcast"
   - "process this book"
@@ -62,7 +62,7 @@ This skill guarantees:
 - Raw source files preserved via `gbrain files upload-raw`
 - Filing by primary subject, not by media format
 - Social-media / short-form video URLs (YouTube, TikTok, Instagram, X, Facebook,
-  public video files) go through the SAME skill via a deterministic Supadata
+  public video files) go through the SAME skill via a deterministic ScrapeCreators
   fetch that captures transcript **and** complete metadata in **one** raw file at
   `sources/social/<platform>-<id>.txt`
 - Social raw stays disk-only provenance: `.txt`, never `.md`, never synced into
@@ -82,7 +82,7 @@ Every mention of a person or company with a brain page MUST create a back-link.
 
 | Format | Action |
 |--------|--------|
-| Social/video URL (YouTube, TikTok, Instagram, X, Facebook, public video file) | Run deterministic Supadata fetch: `node skills/media-ingest/scripts/get-supadata-key.mjs \| node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin` |
+| Social/video URL (YouTube, TikTok, Instagram, X, Facebook, public video file) | Run deterministic ScrapeCreators fetch: `node skills/media-ingest/scripts/get-supadata-key.mjs \| node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin` |
 | Audio file | Transcribe with available STT service |
 | PDF | Extract text (OCR if needed) |
 | Book PDF | Extract text, identify chapters/sections |
@@ -100,16 +100,17 @@ node skills/media-ingest/scripts/get-supadata-key.mjs \
   | node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin
 ```
 
-- Works for YouTube, TikTok, Instagram, X (Twitter), Facebook, and public video
-  file URLs via Supadata's `/transcript` + `/metadata` endpoints
-- Reuses `SUPADATA_API_KEY` from env or `~/.openclaw/openclaw.json` via the local helper
+- Works for YouTube, TikTok, Instagram, X (Twitter), and Facebook via
+  ScrapeCreators' per-platform metadata + transcript endpoints
+- Reuses `SCRAPECREATORS_API_KEY` from `~/.openclaw/.env` or the process env via
+  the local helper
 - Idempotent path: same `<platform>-<id>` overwrites, never duplicates
 - Prints the absolute raw-file path on stdout when a file is written
 
 **DEDUP — the script refuses to re-fetch a post already on disk.** It is keyed by
 the post's canonical shortcode/id (via `canonical-url.mjs`, which normalizes every
 link shape — mobile host, `/reel` vs `/reels`, `?igsh=`/tracking params — and
-follows **share/short links through a FREE redirect**, not a Supadata call) and
+follows **share/short links through a FREE redirect**, not an API call) and
 checks twice: a free pre-check before any API call, and an authoritative backstop
 after metadata (before the costly transcript call). So even a `vm.tiktok.com`
 share link is de-duplicated for zero credits. If the post already has a
@@ -146,9 +147,9 @@ credit. When you see it:
   surfaced, not enforced.
 
 **ONE INVOCATION — credits are billed per request.** The caller should not
-blindly re-run the script. For Supadata `internal-error` transcript failures,
-the script now performs the vendor-style backoff **within the same invocation**
-(wait 5s, then 30s, then 60s, then give up). Exit codes: `0` ok /
+blindly re-run the script. For ScrapeCreators transcript failures, the script
+now performs the built-in backoff **within the same invocation** (wait 5s, then
+30s, then 60s, then give up). Exit codes: `0` ok /
 already-ingested · `1` usage · `2` no api key · `3` metadata error · `4`
 transcript error. On **any** non-zero exit (or a `>>> SURFACE THIS TO THE USER`
 line on stderr):
