@@ -8,12 +8,12 @@
 //
 // Keep it simple. Two API calls (metadata + transcript), one file out.
 //
-// ONE ATTEMPT ONLY. Supadata credits are billed per request, so this script
-// NEVER retries on errors. If anything goes wrong (bad status code, failed/
-// timed-out job), it stops, prints the exact HTTP status + body, and exits
-// non-zero with a loud ">>> SURFACE THIS TO THE USER" line. The caller (the
-// media-ingest skill / the AI) MUST relay that to Elliot for troubleshooting
-// instead of silently re-running and wasting credits.
+// ONE INVOCATION ONLY. Supadata credits are billed per request, so the caller
+// should NOT blindly re-run this script. Transcript requests DO perform the
+// vendor-recommended internal-error backoff (5s, 30s, 60s) within the same
+// invocation; anything still failing after that is surfaced to Elliot with the
+// exact HTTP status + body. The caller (the media-ingest skill / the AI) MUST
+// relay that instead of silently re-running and wasting credits.
 //
 // DEDUP: this post may already be on disk. Each fetch is keyed by the post's
 // canonical shortcode/id (the .txt filename suffix), so we refuse to re-fetch a
@@ -23,7 +23,7 @@
 // An incomplete prior fetch (_transcript_state empty/error) is NOT a duplicate —
 // it re-fetches to finish. Pass --force to re-fetch deliberately (bills credits).
 //
-// Usage:  node social-fetch.mjs <url> [--brain <dir>] [--force]
+// Usage:  node social-fetch.mjs <url> [--brain <dir>] [--force] [--api-key-stdin]
 // Output: prints the written (or already-existing) file path as the last stdout line.
 // Exit:   0 ok / already-ingested · 1 usage · 2 no api key · 3 metadata error · 4 transcript error
 
@@ -32,39 +32,30 @@ import path from 'node:path';
 import os from 'node:os';
 import { resolve as resolveUrl } from './canonical-url.mjs';
 import { findContentDuplicates } from './content-fingerprint.mjs';
+import { existingOkFile, findCitingPages } from './social-local-state.mjs';
+import { getMetadata, getTranscript } from './supadata-client.mjs';
 
-const BASE = 'https://api.supadata.ai/v1';
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const SURFACE = '>>> SURFACE THIS TO THE USER. One attempt only was made — Supadata credits are billed per request, so do NOT auto-retry. Troubleshoot with Elliot first.';
+const SURFACE = '>>> SURFACE THIS TO THE USER. Built-in transcript retries (5s, 30s, 60s) were already exhausted in this invocation. Do NOT auto-retry again without Elliot deciding to spend another request.';
 
 // ---- args ----
 const argv = process.argv.slice(2);
 const url = argv.find((a) => !a.startsWith('-'));
 const force = argv.includes('--force');
+const apiKeyFromStdin = argv.includes('--api-key-stdin');
 const brain = path.resolve((() => { const i = argv.indexOf('--brain'); return i >= 0 ? argv[i + 1] : path.join(os.homedir(), 'brain'); })()); // absolute, so every printed path is absolute
-if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>] [--force]'); process.exit(1); }
+if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>] [--force] [--api-key-stdin]'); process.exit(1); }
 
 // ---- dedup (deterministic, keyed by the post's canonical shortcode/id) ----
 const socialDir = path.join(brain, 'sources', 'social');
 const sanitizeId = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
-// Path of an already-COMPLETE fetch (.txt with _transcript_state: "ok") for this
-// id, else null. A file whose prior fetch was empty/error is treated as absent
-// so we re-fetch and finish it.
-function existingOkFile(id) {
-  if (!id) return null;
-  const want = sanitizeId(id);
-  try {
-    for (const f of fs.readdirSync(socialDir)) {
-      if (!f.endsWith(`-${want}.txt`)) continue;
-      const head = fs.readFileSync(path.join(socialDir, f), 'utf8').slice(0, 4000);
-      return /^_transcript_state:\s*"ok"/m.test(head) ? path.join(socialDir, f) : null;
-    }
-  } catch { /* dir missing on first run */ }
-  return null;
+async function readStdinText() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  return Buffer.concat(chunks.map((chunk) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)))).toString('utf8').trim();
 }
 function skipIfDuplicate(id, stage) {
   if (force) return;
-  const hit = existingOkFile(id);
+  const hit = existingOkFile(socialDir, id);
   if (!hit) return;
   console.log(hit); // path, for the caller — same stdout contract as a fresh write
   console.error(`[social-fetch] ALREADY INGESTED (${stage}) — ${hit}`);
@@ -77,42 +68,9 @@ function skipIfDuplicate(id, stage) {
 const canon = await resolveUrl(url);
 skipIfDuplicate(canon?.id, canon?.resolvedFrom ? 'redirect-precheck' : 'url-precheck');
 
-// ---- api key (env, then openclaw.json) ----
-const apiKey = process.env.SUPADATA_API_KEY
-  || (() => { try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.openclaw/openclaw.json'), 'utf8'))?.mcp?.servers?.supadata?.env?.SUPADATA_API_KEY; } catch { return null; } })();
+// ---- api key (stdin only) ----
+const apiKey = apiKeyFromStdin ? await readStdinText() : null;
 if (!apiKey) { console.error('No SUPADATA_API_KEY found.'); console.error(SURFACE); process.exit(2); }
-
-// ---- one GET, NO retries ----
-async function get(endpoint, params) {
-  const u = new URL(BASE + endpoint);
-  for (const [k, v] of Object.entries(params || {})) if (v != null) u.searchParams.set(k, String(v));
-  const res = await fetch(u, { headers: { 'x-api-key': apiKey } });
-  const body = await res.json().catch(() => ({}));
-  return { status: res.status, body };
-}
-
-// Find brain .md pages that cite any of `needles` (a sidecar filename or canonical
-// URL) so a duplicate flag can point the AI straight at the page to edit. Walks the
-// brain, skipping sources/ (raw sidecars) and dot-dirs. Returns absolute paths.
-function findCitingPages(brainDir, needles) {
-  const hits = new Set();
-  const skip = new Set(['sources', 'node_modules']);
-  (function walk(d) {
-    let ents = [];
-    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-    for (const e of ents) {
-      if (e.name.startsWith('.')) continue;
-      const fp = path.join(d, e.name);
-      if (e.isDirectory()) { if (!skip.has(e.name)) walk(fp); }
-      else if (e.name.endsWith('.md')) {
-        let c = '';
-        try { c = fs.readFileSync(fp, 'utf8'); } catch { continue; }
-        if (needles.some((n) => c.includes(n))) hits.add(fp);
-      }
-    }
-  })(brainDir);
-  return [...hits];
-}
 
 // We request text=false so Supadata returns TIMESTAMPED segments
 // ({content:[{text, offset(ms), duration(ms)}]}) instead of a flat string.
@@ -125,37 +83,12 @@ const fmtTime = (ms) => {
   const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 };
-const segmentsOf = (b) => Array.isArray(b?.content)
-  ? b.content.filter((c) => c && c.text != null).map((c) => ({ text: String(c.text).trim(), offset: c.offset ?? c.start ?? null }))
-  : (typeof b?.content === 'string' && b.content.trim() ? [{ text: b.content.trim(), offset: null }] : []);
-const plainOf = (segs) => segs.map((s) => s.text).join(' ').trim();
 // One segment per line, prefixed with [m:ss] / [h:mm:ss] when an offset exists.
 const renderTimestamped = (segs) => segs.map((s) => (s.offset != null ? `[${fmtTime(s.offset)}] ${s.text}` : s.text)).join('\n');
 const hasTimestamps = (segs) => segs.some((s) => s.offset != null);
 
-// ONE transcript request. mode=auto = native captions with server-side AI
-// generation fallback in a single billed call. 202 → poll the SAME job to
-// completion (polling status is not a new transcription request).
-// Returns { state: 'ok'|'empty'|'error', text, segments, error }.
-async function getTranscript() {
-  const r = await get('/transcript', { url, text: false, mode: 'auto' });
-  if (r.status === 200) { const segs = segmentsOf(r.body); const t = plainOf(segs); return { state: t ? 'ok' : 'empty', text: t, segments: segs, error: null }; }
-  if (r.status === 202 && r.body?.jobId) {
-    const deadline = Date.now() + 120_000; // generation can take a while
-    while (Date.now() < deadline) {
-      await sleep(3000);
-      const j = await get(`/transcript/${encodeURIComponent(r.body.jobId)}`, {});
-      if (j.status !== 200) return { state: 'error', text: '', segments: [], error: `job poll HTTP ${j.status}: ${JSON.stringify(j.body)}` };
-      if (j.body?.status === 'completed') { const segs = segmentsOf(j.body); const t = plainOf(segs); return { state: t ? 'ok' : 'empty', text: t, segments: segs, error: null }; }
-      if (j.body?.status === 'failed') return { state: 'error', text: '', segments: [], error: `transcript job failed: ${JSON.stringify(j.body)}` };
-    }
-    return { state: 'error', text: '', segments: [], error: 'transcript job timed out after 120s' };
-  }
-  return { state: 'error', text: '', segments: [], error: `HTTP ${r.status}: ${JSON.stringify(r.body)}` };
-}
-
 // ---- main ----
-const meta = await get('/metadata', { url });
+const meta = await getMetadata(apiKey, url);
 if (meta.status !== 200 || !meta.body?.id) {
   console.error(`[social-fetch] METADATA ERROR — HTTP ${meta.status}: ${JSON.stringify(meta.body)}`);
   console.error(SURFACE);
@@ -165,7 +98,7 @@ const m = meta.body;
 // GATE 2 — authoritative backstop on the canonical id, before the costly
 // transcript call. Catches URL shapes GATE 1's regex didn't recognize.
 skipIfDuplicate(m.id, 'metadata-id');
-const t = await getTranscript();
+const t = await getTranscript(apiKey, url);
 
 const platform = String(m.platform || 'unknown').toLowerCase();
 const id = sanitizeId(m.id);
