@@ -332,6 +332,11 @@ page at {path}, {N} entities propagated."
 
 ## Anti-Patterns
 
+- **Inferring / fabricating `## Why I Saved This`.** This is the user's own signal —
+  the one thing only they can answer. NEVER guess it from the content, the author, or a
+  cluster of prior saves. Ask for it (while the fetch runs, not as a gate), and until the
+  user gives their words, leave an explicit placeholder (`_Pending <user>'s own words — not
+  inferred._`). A guessed reason pollutes the page with words the user never said.
 - Dumping raw transcripts without analysis
 - Skipping entity extraction ("I'll do that separately")
 - Two files for a social/video raw (separate transcript + metadata). One raw
