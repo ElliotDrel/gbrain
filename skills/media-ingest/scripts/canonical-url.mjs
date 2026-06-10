@@ -4,17 +4,17 @@
 // share tokens like ?igsh=, tracking params, short/share links that 30x) down to
 // ONE canonical form + the post's stable id. The id is what social-fetch.mjs uses
 // to dedup, so a clean canonicalizer means we catch duplicates no matter how the
-// link was pasted — including share links — before spending a Supadata credit.
+// link was pasted — including share links — before spending an API credit.
 //
 // Two entry points:
 //   canonicalize(url)  -> { platform, id, canonicalUrl } | null   (PURE, no network)
 //   resolve(url, opts) -> Promise<{ ...canonicalize, resolvedFrom? } | null>
 //        tries canonicalize() first; if the link is an opaque share/short link,
-//        follows HTTP redirects (FREE — not a Supadata call) and canonicalizes the
+//        follows HTTP redirects (FREE — not a provider API call) and canonicalizes the
 //        final URL. Only follows for known social/short hosts; swallows all errors.
 //
 // id semantics: the id returned matches the post's canonical shortcode/numeric id,
-// which is what Supadata returns as metadata.id for these platforms — so matching
+// which the provider returns as metadata.id for these platforms — so matching
 // `<platform>-<id>.txt` on disk is a true duplicate check.
 
 const UA =

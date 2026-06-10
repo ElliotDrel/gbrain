@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // social-fetch.mjs — fetch a social/video URL's transcript + metadata via
-// Supadata and write ONE raw file: <brain>/sources/social/<platform>-<id>.txt
+// ScrapeCreators and write ONE raw file: <brain>/sources/social/<platform>-<id>.txt
 //
 // NOTE: the file is .txt ON PURPOSE. gbrain sync only ingests .md pages into
 // the engine, so a .txt keeps the raw as disk-only provenance (same mechanism
@@ -8,12 +8,12 @@
 //
 // Keep it simple. Two API calls (metadata + transcript), one file out.
 //
-// ONE INVOCATION ONLY. Supadata credits are billed per request, so the caller
-// should NOT blindly re-run this script. Transcript requests DO perform the
-// vendor-recommended internal-error backoff (5s, 30s, 60s) within the same
-// invocation; anything still failing after that is surfaced to Elliot with the
-// exact HTTP status + body. The caller (the media-ingest skill / the AI) MUST
-// relay that instead of silently re-running and wasting credits.
+// ONE INVOCATION ONLY. ScrapeCreators credits are billed per request, so the
+// caller should NOT blindly re-run this script. Transcript requests DO perform
+// the built-in 5s / 30s / 60s backoff within the same invocation; anything
+// still failing after that is surfaced to Elliot with the exact HTTP status +
+// body. The caller (the media-ingest skill / the AI) MUST relay that instead
+// of silently re-running and wasting credits.
 //
 // DEDUP: this post may already be on disk. Each fetch is keyed by the post's
 // canonical shortcode/id (the .txt filename suffix), so we refuse to re-fetch a
@@ -63,20 +63,15 @@ function skipIfDuplicate(id, stage) {
   process.exit(0);
 }
 // GATE 1 — canonicalize the URL (handles share/short links via a FREE redirect
-// follow — NOT a Supadata credit) to get the post's stable id, then skip if we
+// follow — NOT an API credit) to get the post's stable id, then skip if we
 // already have a complete fetch for it. Done before spending any paid credit.
 const canon = await resolveUrl(url);
 skipIfDuplicate(canon?.id, canon?.resolvedFrom ? 'redirect-precheck' : 'url-precheck');
 
 // ---- api key (stdin only) ----
 const apiKey = apiKeyFromStdin ? await readStdinText() : null;
-if (!apiKey) { console.error('No SUPADATA_API_KEY found.'); console.error(SURFACE); process.exit(2); }
+if (!apiKey) { console.error('No SCRAPECREATORS_API_KEY found.'); console.error(SURFACE); process.exit(2); }
 
-// We request text=false so Supadata returns TIMESTAMPED segments
-// ({content:[{text, offset(ms), duration(ms)}]}) instead of a flat string.
-// We don't cite timestamps today, but storing them means we never have to
-// re-fetch (and re-bill) to get them later. Defensively handle a plain-string
-// body too (some AI-generated fallbacks return no offsets).
 const fmtTime = (ms) => {
   const s = Math.floor((ms || 0) / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
@@ -88,7 +83,14 @@ const renderTimestamped = (segs) => segs.map((s) => (s.offset != null ? `[${fmtT
 const hasTimestamps = (segs) => segs.some((s) => s.offset != null);
 
 // ---- main ----
-const meta = await getMetadata(apiKey, url);
+const platform = canon?.platform;
+if (!platform) {
+  console.error(`[social-fetch] URL NOT SUPPORTED — could not determine a supported platform from ${url}`);
+  console.error(SURFACE);
+  process.exit(3);
+}
+
+const meta = await getMetadata(apiKey, platform, url);
 if (meta.status !== 200 || !meta.body?.id) {
   console.error(`[social-fetch] METADATA ERROR — HTTP ${meta.status}: ${JSON.stringify(meta.body)}`);
   console.error(SURFACE);
@@ -98,9 +100,7 @@ const m = meta.body;
 // GATE 2 — authoritative backstop on the canonical id, before the costly
 // transcript call. Catches URL shapes GATE 1's regex didn't recognize.
 skipIfDuplicate(m.id, 'metadata-id');
-const t = await getTranscript(apiKey, url);
-
-const platform = String(m.platform || 'unknown').toLowerCase();
+const t = await getTranscript(apiKey, platform, url);
 const id = sanitizeId(m.id);
 const dir = socialDir;
 fs.mkdirSync(dir, { recursive: true });
@@ -114,7 +114,7 @@ const transcriptBlock = t.state === 'ok'
     : `_(TRANSCRIPT ERROR — ${t.error})_`;
 const transcriptHeading = timestamped ? '## Transcript (timestamped)' : '## Transcript';
 
-const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _duration: m.media?.duration ?? m.duration ?? null, _fetched_at: new Date().toISOString(), _transcript_state: t.state, _transcript_timestamped: timestamped };
+const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _duration: m.media?.duration ?? m.duration ?? null, _fetched_at: new Date().toISOString(), _provider: 'scrapecreators', _transcript_state: t.state, _transcript_timestamped: timestamped };
 const fm = Object.entries(front).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
 
 const out = `---

@@ -9,7 +9,7 @@
 //
 // Deterministic: same transcripts -> same score. Pure local compute, no network.
 // IMPORTANT: this needs the transcript, so it runs AFTER the (paid) fetch. It
-// prevents a duplicate brain PAGE; it cannot save the Supadata credit the way the
+// prevents a duplicate brain PAGE; it cannot save the API credit the way the
 // id-gate does. Works for any space-delimited script (Latin, Cyrillic, accented,
 // etc.) — normalize() keeps all Unicode letters/numbers. (Scriptio-continua langs
 // like Chinese/Japanese have no word breaks, so word-shingling degrades there.)
