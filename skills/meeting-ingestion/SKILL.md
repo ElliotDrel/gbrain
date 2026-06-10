@@ -142,6 +142,11 @@ This skill guarantees:
   at an inbound media temp path (`.openclaw/media/inbound/...`).
 - The draft is **shown to the user for review before ingestion happens**, and the
   agent iterates until the user is satisfied. Ingestion happens only after approval.
+- **At the approval checkpoint, the user gets the canonical brain file path AND the
+  clickable GitHub commit link for the exact pushed draft commit under review.** If the
+  draft changes during the review loop, the agent updates the same canonical file, makes
+  a fresh commit, pushes it, and surfaces the new commit link before asking for approval
+  again.
 - EVERY attendee gets a people page (created or updated).
 - EVERY company/project discussed gets entity propagation.
 - Timeline entries on ALL mentioned entities (timeline merge).
@@ -261,6 +266,14 @@ in-brain path** (`$BRAIN_DIR/meetings/<slug>.md`) — the same file being
 edited in place, the same path on every iteration. Never attach a temp copy, a
 regenerated duplicate, or an inbound-media path. If the surface can't attach,
 quote the relevant sections and give that same path.
+
+**Before asking for approval, commit the current draft state and push it.** That
+commit must include the canonical meeting draft file and any git-tracked raw sidecar
+created for the review. Resolve the repository's push remote and surface the
+GitHub commit link in the approval-checkpoint recap, so the user can inspect the
+exact version they are approving. If you revise the draft again before approval,
+update the same canonical file, make a fresh commit, push again, and show the new
+commit link before asking for approval again.
 
 Stay in the loop until the user is satisfied: tighten takeaways, fix missing
 action items, correct names/links/people/companies (diarization is unreliable —
