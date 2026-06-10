@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseWebVtt, normalizeMetadata, normalizeTranscript } from './supadata-client.mjs';
+import { getTranscript, parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata } from './supadata-client.mjs';
 
 test('parseWebVtt preserves timestamp offsets and text', () => {
   const segments = parseWebVtt(`WEBVTT
@@ -46,7 +46,7 @@ test('normalizeMetadata maps instagram docs shape into the social-fetch contract
   });
 
   assert.equal(normalized.platform, 'instagram');
-  assert.equal(normalized.id, '3657869083548472514');
+  assert.equal(normalized.id, 'DLDXI0fylTC');
   assert.equal(normalized.author.displayName, 'Jane Doe');
   assert.equal(normalized.description, 'Caption text here');
   assert.equal(normalized.media.duration, 84.666);
@@ -81,4 +81,72 @@ test('normalizeTranscript maps instagram transcript arrays without timestamps', 
   assert.equal(normalized.segments[0].offset, null);
   assert.match(normalized.text, /First slide/);
   assert.match(normalized.text, /Second slide/);
+});
+
+test('shouldFallbackToSupadata only triggers for long failed videos when a key exists', () => {
+  assert.equal(shouldFallbackToSupadata({
+    durationSeconds: 147,
+    transcriptState: 'error',
+    supadataApiKey: 'secret',
+  }), true);
+
+  assert.equal(shouldFallbackToSupadata({
+    durationSeconds: 112,
+    transcriptState: 'error',
+    supadataApiKey: 'secret',
+  }), false);
+
+  assert.equal(shouldFallbackToSupadata({
+    durationSeconds: 147,
+    transcriptState: 'ok',
+    supadataApiKey: 'secret',
+  }), false);
+
+  assert.equal(shouldFallbackToSupadata({
+    durationSeconds: 147,
+    transcriptState: 'error',
+    supadataApiKey: '',
+  }), false);
+});
+
+test('getTranscript falls back to Supadata only after ScrapeCreators fails on a long video', async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).startsWith('https://api.scrapecreators.com/')) {
+      return new Response(JSON.stringify({ error: 'video-too-long' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (String(url).startsWith('https://api.supadata.ai/v1/transcript')) {
+      return new Response(JSON.stringify({
+        content: [{ text: 'fallback transcript line', offset: 0 }],
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    throw new Error(`unexpected url: ${url}`);
+  };
+
+  try {
+    const result = await getTranscript(
+      { scrapeCreatorsApiKey: 'scrape', supadataApiKey: 'supadata' },
+      'instagram',
+      'https://www.instagram.com/reel/example/',
+      { durationSeconds: 147 },
+    );
+
+    assert.equal(result.provider, 'supadata');
+    assert.equal(result.fallbackUsed, true);
+    assert.equal(result.state, 'ok');
+    assert.match(result.text, /fallback transcript line/);
+    assert.equal(calls.length, 2);
+    assert.match(calls[0], /api\.scrapecreators\.com/);
+    assert.match(calls[1], /api\.supadata\.ai/);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });

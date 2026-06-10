@@ -53,6 +53,19 @@ async function readStdinText() {
   for await (const chunk of process.stdin) chunks.push(chunk);
   return Buffer.concat(chunks.map((chunk) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)))).toString('utf8').trim();
 }
+function parseApiKeys(raw) {
+  if (!raw) return { scrapeCreatorsApiKey: null, supadataApiKey: null };
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        scrapeCreatorsApiKey: typeof parsed.scrapeCreatorsApiKey === 'string' ? parsed.scrapeCreatorsApiKey.trim() : null,
+        supadataApiKey: typeof parsed.supadataApiKey === 'string' ? parsed.supadataApiKey.trim() : null,
+      };
+    }
+  } catch {}
+  return { scrapeCreatorsApiKey: raw.trim() || null, supadataApiKey: null };
+}
 function skipIfDuplicate(id, stage) {
   if (force) return;
   const hit = existingOkFile(socialDir, id);
@@ -69,8 +82,8 @@ const canon = await resolveUrl(url);
 skipIfDuplicate(canon?.id, canon?.resolvedFrom ? 'redirect-precheck' : 'url-precheck');
 
 // ---- api key (stdin only) ----
-const apiKey = apiKeyFromStdin ? await readStdinText() : null;
-if (!apiKey) { console.error('No SCRAPECREATORS_API_KEY found.'); console.error(SURFACE); process.exit(2); }
+const apiKeys = parseApiKeys(apiKeyFromStdin ? await readStdinText() : null);
+if (!apiKeys.scrapeCreatorsApiKey) { console.error('No SCRAPECREATORS_API_KEY found.'); console.error(SURFACE); process.exit(2); }
 
 const fmtTime = (ms) => {
   const s = Math.floor((ms || 0) / 1000);
@@ -94,7 +107,7 @@ if (!platform) {
 // some valid input shapes like IG `/reels/<id>` and require the normalized
 // `/reel/<id>`. The resolver already produced that canonical form.
 const fetchUrl = canon?.canonicalUrl || url;
-const meta = await getMetadata(apiKey, platform, fetchUrl);
+const meta = await getMetadata(apiKeys, platform, fetchUrl);
 if (meta.status !== 200 || !meta.body?.id) {
   console.error(`[social-fetch] METADATA ERROR — HTTP ${meta.status}: ${JSON.stringify(meta.body)}`);
   console.error(SURFACE);
@@ -109,7 +122,8 @@ const keyId = canon?.id || m.id;
 // GATE 2 — authoritative backstop on the canonical id, before the costly
 // transcript call. Catches URL shapes GATE 1's regex didn't recognize.
 skipIfDuplicate(keyId, 'metadata-id');
-const t = await getTranscript(apiKey, platform, fetchUrl);
+const durationSeconds = m.media?.duration ?? m.duration ?? null;
+const t = await getTranscript(apiKeys, platform, fetchUrl, { durationSeconds });
 const id = sanitizeId(keyId);
 const dir = socialDir;
 fs.mkdirSync(dir, { recursive: true });
@@ -123,7 +137,17 @@ const transcriptBlock = t.state === 'ok'
     : `_(TRANSCRIPT ERROR — ${t.error})_`;
 const transcriptHeading = timestamped ? '## Transcript (timestamped)' : '## Transcript';
 
-const front = { ...m, _source_url: url, _canonical_url: canon?.canonicalUrl || null, _duration: m.media?.duration ?? m.duration ?? null, _fetched_at: new Date().toISOString(), _provider: 'scrapecreators', _transcript_state: t.state, _transcript_timestamped: timestamped };
+const front = {
+  ...m,
+  _source_url: url,
+  _canonical_url: canon?.canonicalUrl || null,
+  _duration: durationSeconds,
+  _fetched_at: new Date().toISOString(),
+  _provider: 'scrapecreators',
+  _transcript_provider: t.provider || 'scrapecreators',
+  _transcript_state: t.state,
+  _transcript_timestamped: timestamped,
+};
 const fm = Object.entries(front).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
 
 const out = `---
