@@ -103,7 +103,10 @@ node skills/media-ingest/scripts/get-supadata-key.mjs \
 - Works for YouTube, TikTok, Instagram, X (Twitter), and Facebook via
   ScrapeCreators' per-platform metadata + transcript endpoints
 - Reuses `SCRAPECREATORS_API_KEY` from `~/.openclaw/.env` or the process env via
-  the local helper
+  the local helper, and also passes through `SUPADATA_API_KEY` when available
+- Transcript path is provider-tiered: ScrapeCreators first; if a video is over
+  120 seconds and ScrapeCreators' transcript call fails, the same invocation
+  falls back to Supadata transcript fetch before surfacing an error
 - Idempotent path: same `<platform>-<id>` overwrites, never duplicates
 - Prints the absolute raw-file path on stdout when a file is written
 

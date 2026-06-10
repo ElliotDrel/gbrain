@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-// ScrapeCreators HTTP client kept separate from local file I/O so code-safety
-// audits can distinguish intentional API traffic from local dedup/provenance
-// logic. The filename stays put for compatibility with existing references.
+// Provider HTTP client kept separate from local file I/O so code-safety audits
+// can distinguish intentional API traffic from local dedup/provenance logic.
+// The filename stays put for compatibility with existing references.
 
-const BASE = 'https://api.scrapecreators.com';
+const SCRAPECREATORS_BASE = 'https://api.scrapecreators.com';
+const SUPADATA_BASE = 'https://api.supadata.ai/v1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const INTERNAL_ERROR_RETRY_DELAYS_MS = [5_000, 30_000, 60_000];
 const PLATFORM_ALIASES = { x: 'twitter' };
 
-async function get(apiKey, endpoint, params) {
-  const u = new URL(BASE + endpoint);
+async function getJson(base, apiKey, endpoint, params) {
+  const u = new URL(base + endpoint);
   for (const [k, v] of Object.entries(params || {})) {
     if (v != null) u.searchParams.set(k, String(v));
   }
@@ -24,13 +25,17 @@ function isRetryableResponse(res) {
   return res?.status >= 500;
 }
 
+async function getScrapeCreators(apiKey, endpoint, params) {
+  return getJson(SCRAPECREATORS_BASE, apiKey, endpoint, params);
+}
+
 async function getWithRetry(apiKey, endpoint, params, context) {
-  let last = await get(apiKey, endpoint, params);
+  let last = await getScrapeCreators(apiKey, endpoint, params);
   for (const delayMs of INTERNAL_ERROR_RETRY_DELAYS_MS) {
     if (!isRetryableResponse(last)) return last;
     console.error(`[scrapecreators-client] ${context} hit HTTP ${last.status}; retrying in ${Math.floor(delayMs / 1000)}s`);
     await sleep(delayMs);
-    last = await get(apiKey, endpoint, params);
+    last = await getScrapeCreators(apiKey, endpoint, params);
   }
   return last;
 }
@@ -319,6 +324,81 @@ function normalizeTranscript(platform, body) {
   }
 }
 
+function supadataSegmentsOf(body) {
+  if (Array.isArray(body?.content)) {
+    return body.content
+      .filter((item) => item && item.text != null)
+      .map((item) => ({ text: String(item.text).trim(), offset: item.offset ?? item.start ?? null }));
+  }
+  if (typeof body?.content === 'string' && body.content.trim()) {
+    return [{ text: body.content.trim(), offset: null }];
+  }
+  return [];
+}
+
+function isSupadataInternalErrorResponse(res) {
+  return res?.status === 500 && res?.body?.error === 'internal-error';
+}
+
+async function getSupadata(apiKey, endpoint, params) {
+  return getJson(SUPADATA_BASE, apiKey, endpoint, params);
+}
+
+async function getSupadataWithInternalErrorRetry(apiKey, endpoint, params, context) {
+  let last = await getSupadata(apiKey, endpoint, params);
+  for (const delayMs of INTERNAL_ERROR_RETRY_DELAYS_MS) {
+    if (!isSupadataInternalErrorResponse(last)) return last;
+    console.error(`[supadata-client] ${context} hit internal-error; retrying in ${Math.floor(delayMs / 1000)}s`);
+    await sleep(delayMs);
+    last = await getSupadata(apiKey, endpoint, params);
+  }
+  return last;
+}
+
+async function getSupadataTranscript(apiKey, url) {
+  const first = await getSupadataWithInternalErrorRetry(
+    apiKey,
+    '/transcript',
+    { url, text: false, mode: 'auto' },
+    'transcript request',
+  );
+  if (first.status === 200) {
+    const segments = supadataSegmentsOf(first.body);
+    const text = plainOf(segments);
+    return { state: text ? 'ok' : 'empty', text, segments, error: null, provider: 'supadata', fallbackUsed: true };
+  }
+  if (first.status === 202 && first.body?.jobId) {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      await sleep(3000);
+      const polled = await getSupadataWithInternalErrorRetry(
+        apiKey,
+        `/transcript/${encodeURIComponent(first.body.jobId)}`,
+        {},
+        'transcript job poll',
+      );
+      if (polled.status !== 200) {
+        return { state: 'error', text: '', segments: [], error: `job poll HTTP ${polled.status}: ${JSON.stringify(polled.body)}`, provider: 'supadata', fallbackUsed: true };
+      }
+      if (polled.body?.status === 'completed') {
+        const resultBody = polled.body?.result || polled.body;
+        const segments = supadataSegmentsOf(resultBody);
+        const text = plainOf(segments);
+        return { state: text ? 'ok' : 'empty', text, segments, error: null, provider: 'supadata', fallbackUsed: true };
+      }
+      if (polled.body?.status === 'failed') {
+        return { state: 'error', text: '', segments: [], error: `transcript job failed: ${JSON.stringify(polled.body)}`, provider: 'supadata', fallbackUsed: true };
+      }
+    }
+    return { state: 'error', text: '', segments: [], error: 'transcript job timed out after 120s', provider: 'supadata', fallbackUsed: true };
+  }
+  return { state: 'error', text: '', segments: [], error: `HTTP ${first.status}: ${JSON.stringify(first.body)}`, provider: 'supadata', fallbackUsed: true };
+}
+
+export function shouldFallbackToSupadata({ durationSeconds, transcriptState, supadataApiKey }) {
+  return Number.isFinite(durationSeconds) && durationSeconds > 120 && transcriptState === 'error' && !!supadataApiKey;
+}
+
 function platformName(platform) {
   return PLATFORM_ALIASES[platform] || platform;
 }
@@ -336,18 +416,44 @@ function routesFor(platform) {
 
 export { parseWebVtt, normalizeMetadata, normalizeTranscript };
 
-export async function getMetadata(apiKey, platform, url) {
+export async function getMetadata(apiKeys, platform, url) {
   const routes = routesFor(platform);
   if (!routes) return { status: 400, body: { error: `unsupported platform: ${platform}` } };
-  const res = await get(apiKey, routes.metadata, { url });
+  const res = await getScrapeCreators(apiKeys.scrapeCreatorsApiKey, routes.metadata, { url });
   if (res.status === 200) return { ...res, body: normalizeMetadata(platform, res.body) };
   return res;
 }
 
-export async function getTranscript(apiKey, platform, url) {
+export async function getTranscript(apiKeys, platform, url, { durationSeconds = null } = {}) {
   const routes = routesFor(platform);
-  if (!routes) return { state: 'error', text: '', segments: [], error: `unsupported platform: ${platform}` };
-  const first = await getWithRetry(apiKey, routes.transcript, { url }, 'transcript request');
-  if (first.status === 200) return normalizeTranscript(platform, first.body);
-  return { state: 'error', text: '', segments: [], error: `HTTP ${first.status}: ${JSON.stringify(first.body)}` };
+  if (!routes) return { state: 'error', text: '', segments: [], error: `unsupported platform: ${platform}`, provider: 'scrapecreators', fallbackUsed: false };
+  const first = await getWithRetry(apiKeys.scrapeCreatorsApiKey, routes.transcript, { url }, 'transcript request');
+  if (first.status === 200) {
+    return { ...normalizeTranscript(platform, first.body), provider: 'scrapecreators', fallbackUsed: false };
+  }
+
+  const scrapeError = `HTTP ${first.status}: ${JSON.stringify(first.body)}`;
+  if (shouldFallbackToSupadata({
+    durationSeconds,
+    transcriptState: 'error',
+    supadataApiKey: apiKeys.supadataApiKey,
+  })) {
+    console.error(`[social-fetch] ScrapeCreators transcript failed for ${Math.round(durationSeconds)}s video; trying Supadata fallback.`);
+    const fallback = await getSupadataTranscript(apiKeys.supadataApiKey, url);
+    if (fallback.state === 'error') {
+      return {
+        ...fallback,
+        error: `ScrapeCreators failed first: ${scrapeError}; Supadata fallback failed: ${fallback.error}`,
+      };
+    }
+    return {
+      ...fallback,
+      primaryError: scrapeError,
+    };
+  }
+
+  const suffix = Number.isFinite(durationSeconds) && durationSeconds > 120 && !apiKeys.supadataApiKey
+    ? '; Supadata fallback unavailable (no SUPADATA_API_KEY)'
+    : '';
+  return { state: 'error', text: '', segments: [], error: `${scrapeError}${suffix}`, provider: 'scrapecreators', fallbackUsed: false };
 }
