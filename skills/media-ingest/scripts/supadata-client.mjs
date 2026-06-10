@@ -111,7 +111,7 @@ function normalizeInstagramMetadata(body) {
   const owner = media.owner || {};
   return {
     platform: 'instagram',
-    id: firstDefined(media.id, media.shortcode),
+    id: firstDefined(media.shortcode, media.id),
     title: firstDefined(media.accessibility_caption, caption.slice(0, 120), titleFallback('instagram', owner.username, media.product_type === 'clips' ? 'reel' : 'post')),
     description: caption,
     createdAt: isoFromUnixSeconds(media.taken_at_timestamp),

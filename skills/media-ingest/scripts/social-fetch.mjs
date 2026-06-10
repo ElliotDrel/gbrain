@@ -97,11 +97,16 @@ if (meta.status !== 200 || !meta.body?.id) {
   process.exit(3);
 }
 const m = meta.body;
+// File/dedup key = the deterministic, URL-derived canonical id (the post's
+// SHORTCODE for IG, the stable video id for other platforms), NOT the provider's
+// numeric media id (which differs per provider and would orphan files on a
+// provider swap). Fall back to the provider id only when the URL had no id.
+const keyId = canon?.id || m.id;
 // GATE 2 — authoritative backstop on the canonical id, before the costly
 // transcript call. Catches URL shapes GATE 1's regex didn't recognize.
-skipIfDuplicate(m.id, 'metadata-id');
+skipIfDuplicate(keyId, 'metadata-id');
 const t = await getTranscript(apiKey, platform, url);
-const id = sanitizeId(m.id);
+const id = sanitizeId(keyId);
 const dir = socialDir;
 fs.mkdirSync(dir, { recursive: true });
 const file = path.join(dir, `${platform}-${id}.txt`); // .txt = not ingested by sync (disk-only provenance)
