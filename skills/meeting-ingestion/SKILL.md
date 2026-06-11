@@ -1,6 +1,6 @@
 ---
 name: meeting-ingestion
-version: 2.2.0
+version: 2.2.1
 description: |
   Ingest meeting transcripts into brain pages with attendee enrichment, entity
   propagation, and timeline merge — AND run the full post-meeting flow: build a
@@ -155,7 +155,8 @@ This skill guarantees:
 - The full flow runs autonomously to completion before the user is asked anything:
   notes built and ingested, attendees enriched, entities propagated, timelines
   merged, the work committed and pushed, the follow-up/recap drafted, and the
-  execution split run (do-now items executed, the user's own tracked tasks added).
+  execution split run (do-now items executed, and the user's own Track items
+  either added to an existing tracker or surfaced unwritten in the final delivery).
 - There is **exactly one human-in-the-loop checkpoint, and it is the final delivery
   message** — it carries the canonical brain file path, the clickable GitHub commit
   link for the pushed work, the ready-to-send follow-up/recap, and the
@@ -350,12 +351,15 @@ later → add a `followups/<name>.md` + a row here.
 ### Phase 9: Execution split (only if the meeting has action items)
 
 If the meeting produced **Action Items**, read and follow `execution-split.md`: split
-each into **Do now** (do it immediately) vs **Track** (add to the brain's task manager),
-execute the do-now items, and **add the user's own Track items to the meeting's brain
-task manager automatically** — no confirm gate; the user reviews the result at Phase 10
-and can re-bucket or edit then. Only the user's own items go on their list (other
-people's stay in the follow-up/recap). Skip this phase entirely if there are no action
-items. This runs independently of the follow-up.
+each into **Do now** (do it immediately) vs **Track** (candidate task-manager items),
+execute the do-now items, and then handle the user's own Track items like this:
+- if the meeting's brain already has `ops/tasks.md`, or the user explicitly asked for
+  task-manager writes, add them automatically there
+- otherwise, **do not create `ops/tasks.md`**; surface the Track items in the Phase 10
+  delivery only
+Only the user's own items ever go on their list (other people's stay in the
+follow-up/recap). Skip this phase entirely if there are no action items. This runs
+independently of the follow-up.
 
 ### Phase 10: Commit, push, and deliver (the one checkpoint)
 
@@ -364,7 +368,8 @@ ingest produced, then present a single delivery message and invite corrections.
 
 1. **Commit & push.** Stage every file this ingest touched — the meeting page, any
    git-tracked raw sidecar, the people/entity pages created or updated, and the task
-   page if Phase 9 added tasks. Resolve the repository's push remote, commit, and push.
+   page if Phase 9 updated an existing tracker. Resolve the repository's push remote,
+   commit, and push.
 2. **Deliver — one message** carrying:
    - the ingest report: `Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items captured.`
    - the canonical brain file path (`$BRAIN_DIR/meetings/<slug>.md`) and the clickable
@@ -373,8 +378,9 @@ ingest produced, then present a single delivery message and invite corrections.
      inbound-media path; if the surface can't attach, quote the relevant sections and
      give that path.
    - the **ready-to-send** follow-up message or team recap (Phase 8) — drafted, not sent
-   - the execution-split summary (Phase 9): what was done now, and the tasks added
-     (owner, priority, due date)
+   - the execution-split summary (Phase 9): what was done now, and either the tasks
+     added (owner, priority, due date) or the Track items intentionally left unwritten
+     because no tracker exists
    - any uncertain attributions to confirm, and an explicit invitation to flag anything to fix
 3. **Iterate on request.** If the user flags an issue, fix it — update the canonical
    file and re-ingest, correct attributions/links/people/companies, re-bucket or edit
@@ -404,7 +410,8 @@ The single delivery message (Phase 10) leads with:
 "Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items
 captured." — followed by the commit link, the ready-to-send follow-up (default:
 follow-up message; buildpurdue team meeting: team recap), and the execution-split
-summary (do-now done + tasks added), then an invitation to flag fixes.
+summary (do-now done + tracked items either added or intentionally left unwritten),
+then an invitation to flag fixes.
 
 ## Anti-Patterns
 
@@ -419,7 +426,8 @@ steer back to the phase that prevents them:
 - Auto-sending the follow-up or team recap instead of leaving it ready to send for
   the user
 - Proposing the execution split and waiting for confirmation instead of executing
-  do-now items and adding the user's own tasks, then surfacing them at Phase 10
+  do-now items and then either updating an existing task page or surfacing Track
+  items unwritten at Phase 10
 - Treating G-Brain ingestion as a separate, optional step rather than part of this flow
 - Skipping the executive summary or the chronological historical breakdown
 - Writing the historical breakdown as transcript sludge instead of structured
@@ -443,3 +451,5 @@ steer back to the phase that prevents them:
 - Filing meeting pages without cross-linking to all participants
 - Adding *other people's* action items to the user's task manager (only the user's
   own items go on their list; other people's stay in the follow-up/recap)
+- Creating `ops/tasks.md` from scratch as a side effect of meeting ingestion instead
+  of only writing to an existing tracker or a tracker the user explicitly asked for
