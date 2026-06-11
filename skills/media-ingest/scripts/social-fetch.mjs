@@ -6,7 +6,8 @@
 // the engine, so a .txt keeps the raw as disk-only provenance (same mechanism
 // meetings use for their .raw transcripts) — it never pollutes search.
 //
-// Keep it simple. Two API calls (metadata + transcript), one file out.
+// Keep it simple. Prefer one local yt-dlp pass, then two API calls max, one
+// file out.
 //
 // ONE INVOCATION ONLY. ScrapeCreators credits are billed per request, so the
 // caller should NOT blindly re-run this script. Transcript requests DO perform
@@ -153,15 +154,13 @@ const fetchUrl = canon?.canonicalUrl || url;
 let m;
 let t;
 
-if (platform === 'youtube') {
-  const local = await tryYtDlpFetch(fetchUrl);
-  if (local.ok) {
-    m = local.metadata;
-    t = local.transcript;
-    console.error('[social-fetch] yt-dlp local transcript fetch succeeded; skipping paid transcript provider.');
-  } else {
-    console.error(`[social-fetch] yt-dlp local path unavailable/failed (${local.reason}); falling back to paid provider path.`);
-  }
+const local = await tryYtDlpFetch(fetchUrl, { platform });
+if (local.ok) {
+  m = local.metadata;
+  t = local.transcript;
+  console.error(`[social-fetch] yt-dlp local transcript fetch succeeded for ${platform}; skipping paid transcript provider.`);
+} else {
+  console.error(`[social-fetch] yt-dlp local path unavailable/failed for ${platform} (${local.reason}); falling back to paid provider path.`);
 }
 
 if (!m || !t) {
@@ -204,7 +203,7 @@ const front = {
   _canonical_url: canon?.canonicalUrl || null,
   _duration: m.media?.duration ?? m.duration ?? null,
   _fetched_at: new Date().toISOString(),
-  _provider: t.provider === 'yt-dlp' ? 'yt-dlp' : 'scrapecreators',
+  _provider: t.provider || 'scrapecreators',
   _transcript_provider: t.provider || 'scrapecreators',
   _transcript_state: t.state,
   _transcript_timestamped: timestamped,

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeYouTubeMetadata, parseJson3Transcript } from './yt-dlp-client.mjs';
+import { normalizeYtDlpMetadata, parseJson3Transcript } from './yt-dlp-client.mjs';
 
-test('normalizeYouTubeMetadata maps yt-dlp json into the social-fetch contract', () => {
-  const normalized = normalizeYouTubeMetadata({
+test('normalizeYtDlpMetadata maps youtube yt-dlp json into the social-fetch contract', () => {
+  const normalized = normalizeYtDlpMetadata('youtube', {
     id: 'k5-57282taI',
     title: 'Trust is making yourself punishable',
     description: 'Short clip about trust.',
@@ -31,6 +31,31 @@ test('normalizeYouTubeMetadata maps yt-dlp json into the social-fetch contract',
   assert.equal(normalized.media.duration, 41);
   assert.equal(normalized.media.videoUrl, 'https://www.youtube.com/watch?v=k5-57282taI');
   assert.equal(normalized.stats.plays, 78901);
+});
+
+test('normalizeYtDlpMetadata maps non-youtube yt-dlp json into the shared contract', () => {
+  const normalized = normalizeYtDlpMetadata('instagram', {
+    id: 'DLDXI0fylTC',
+    title: 'Reel title',
+    description: 'Caption text here',
+    timestamp: 1750374000,
+    uploader: 'Jane Doe',
+    uploader_id: 'jane',
+    uploader_url: 'https://www.instagram.com/jane/',
+    duration: 84.666,
+    webpage_url: 'https://www.instagram.com/reel/DLDXI0fylTC/',
+    thumbnail: 'https://cdn.example.com/image.jpg',
+    like_count: 123,
+    comment_count: 9,
+    view_count: 425901,
+  }, 'https://www.instagram.com/reel/DLDXI0fylTC/');
+
+  assert.equal(normalized.platform, 'instagram');
+  assert.equal(normalized.id, 'DLDXI0fylTC');
+  assert.equal(normalized.author.displayName, 'Jane Doe');
+  assert.equal(normalized.author.username, 'jane');
+  assert.equal(normalized.media.duration, 84.666);
+  assert.equal(normalized.stats.plays, 425901);
 });
 
 test('parseJson3Transcript keeps offsets and joins segmented text', () => {
