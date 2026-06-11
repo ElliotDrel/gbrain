@@ -54,7 +54,7 @@ if nothing generalizes.}
 {concrete owner-tagged tasks; include `(promise)`-tagged commitments the user made.}
 
 ## Open Questions / Unresolved
-{co-working sessions routinely end mid-thread — capture what was raised but NOT settled,
+{co-working sessions routinely end mid-thread — capture what was raised but not settled,
 and the next decision needed. Never omit a real open thread; this is the format's
 most-dropped, highest-value section. Note who decides / by when if said.}
 

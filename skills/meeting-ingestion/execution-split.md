@@ -13,7 +13,7 @@ commitments) and split each into one of two buckets:
 - **Track** — a real bounded task (concrete verb, bounded scope, an actual next move) that
   isn't doable this second → goes to the task manager.
 
-Never push a vague target ("get to 15 interviews") as a task — only concrete next moves.
+Only concrete next moves become tasks — a vague target ("get to 15 interviews") doesn't qualify.
 
 ## Whose tasks, which brain
 - Only add **the user's own** action items to the task manager. Other people's items stay
@@ -26,7 +26,7 @@ Never push a vague target ("get to 15 interviews") as a task — only concrete n
 1. **Propose the split** to the user as chat output: list the **Do now** items (with what
    you'll do) and the **Track** items (each with proposed owner=user, priority P0–P3, and
    a due date — default the due date to the next meeting when none was stated).
-2. **Wait for the user's confirmation.** Do NOT auto-write tasks to the brain. The user
+2. **Wait for the user's confirmation** before writing any task to the brain — the user
    confirms (and may re-bucket / edit) first. (This is the standing preference: propose,
    then add on confirm.)
 3. On confirm: execute the **Do now** items, and add the **Track** items to the brain's
