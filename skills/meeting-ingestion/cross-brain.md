@@ -14,9 +14,9 @@ single brain and cannot know a meeting is cross-brain.
 
 The brains are hard-isolated, so a cross-brain meeting becomes **two separate meeting
 pages — one in each brain — each written through that brain's lens**, cross-linked, with
-the same raw transcript copied into both sidecars. Do NOT duplicate the full notes into
-both; each page details *its* brain's material and only summarizes the other with a
-pointer.
+the same raw transcript copied into both sidecars. Rather than duplicating the full notes
+into both, give each page *its* brain's material in detail and only summarize the other
+with a pointer.
 
 ## Step A — pick the primary brain (by relevance, not by title)
 

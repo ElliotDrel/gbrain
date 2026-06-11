@@ -8,7 +8,7 @@ opposed to the **leadership** variant which is **org-level** (execs deciding how
 the org).
 
 Scope check: this is for leading *your own* teammate. A peer or external advice/networking
-1-on-1 (someone who isn't your report) is NOT this — use the **standard** variant for those.
+1-on-1 (someone who isn't your report) is not this — use the **standard** variant for those.
 
 Everything else in the skill (frontmatter, `## Source & Metadata`, attendee enrichment,
 dual-brain mode, output variant, etc.) is unchanged; only the body sections differ.

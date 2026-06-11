@@ -2,8 +2,8 @@
 
 Use this **only** for the buildpurdue weekly **team meeting** — a recap posted to the
 whole team (Slack). Every other meeting (including buildpurdue 1-on-1s) uses
-`follow-up-message.md`. Run only AFTER the notes are approved + ingested (router
-`SKILL.md` Phases 1–8). Output ONLY the recap message, ready to paste — no
+`follow-up-message.md`. Run only after the notes are approved + ingested (router
+`SKILL.md` Phases 1–8). Output only the recap message, ready to paste — no
 meta-commentary.
 
 ## Goal & tone
@@ -12,7 +12,7 @@ Brief, action-oriented, casual-but-professional, outcomes over discussion detail
 scannable.
 
 ## Content requirements
-- **What we covered (3–5 bullets):** the MOST important info — decisions made,
+- **What we covered (3–5 bullets):** the most important info — decisions made,
   progress updates, key alignments/takeaways. One line each where possible.
 - **Action items:** extract every task/commitment/next step. Include specific due
   dates/times when stated; if none was given, default the deadline to the **next

@@ -27,7 +27,7 @@ and `Action Items` still scans for promises the user made to others (tag each `(
 {concrete decisions + the WHY/context behind each. The core output of an exec convo.}
 
 ## Open Decisions / To Decide
-{decisions raised but NOT resolved — the parking lot. Leadership's most-dropped item;
+{decisions raised but not resolved — the parking lot. Leadership's most-dropped item;
 never omit a real open decision. Note who needs to decide / by when if said.}
 
 ## Strategic Context & Goals

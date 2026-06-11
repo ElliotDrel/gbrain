@@ -1,6 +1,6 @@
 ---
 name: meeting-ingestion
-version: 2.0.0
+version: 2.1.0
 description: |
   Ingest meeting transcripts into brain pages with attendee enrichment, entity
   propagation, and timeline merge — AND run the full post-meeting flow: build a
@@ -8,7 +8,7 @@ description: |
   Learnings or Useful Later → Action Items → Next Steps → Meeting Historical
   Breakdown), review it with the
   user before ingesting, then draft the follow-up and split out execution. A
-  meeting is NOT fully ingested until the enrich skill has processed every entity.
+  meeting is not fully ingested until the enrich skill has processed every entity.
 triggers:
   - "meeting transcript"
   - "process this meeting"
@@ -136,7 +136,7 @@ This skill guarantees:
 - The raw transcript is preserved in G-Brain via
   `$GB files upload-raw <file> --page meetings/<slug> --type transcript`, which
   creates a git-tracked `.raw/` sidecar next to the meeting page.
-- The raw transcript is NOT a standalone body section. Provenance is a
+- The raw transcript is not a standalone body section. Provenance is a
   `raw_transcript:` pointer in the page **frontmatter** (a brain-relative path
   into the `.raw/` sidecar), optionally also a link under `See Also`. Never point
   at an inbound media temp path (`.openclaw/media/inbound/...`).
@@ -147,10 +147,10 @@ This skill guarantees:
   draft changes during the review loop, the agent updates the same canonical file, makes
   a fresh commit, pushes it, and surfaces the new commit link before asking for approval
   again.
-- EVERY attendee gets a people page (created or updated).
-- EVERY company/project discussed gets entity propagation.
-- Timeline entries on ALL mentioned entities (timeline merge).
-- A meeting is NOT fully ingested until enrich runs for every entity.
+- Every attendee gets a people page (created or updated).
+- Every company/project discussed gets entity propagation.
+- Timeline entries on all mentioned entities (timeline merge).
+- A meeting is not fully ingested until enrich runs for every entity.
 - Back-links created bidirectionally.
 - A follow-up is always produced (Phase 9, routed by meeting type → `followups/`), plus
   an execution split when there are action items (Phase 10, `execution-split.md`) — both
@@ -158,13 +158,15 @@ This skill guarantees:
 
 > **Convention:** See `skills/conventions/quality.md` for Iron Law back-linking.
 
-Every attendee and company mentioned MUST get a back-link from their page to
-the meeting page. An unlinked mention is a broken brain.
+Every attendee and company mentioned gets a back-link from their page to the
+meeting page — an unlinked mention leaves a dead end in the brain, so this one is
+not negotiable.
 
 ## Phases
 
-> Phases 1–4 produce and refine the draft. Do NOT ingest into G-Brain until the
-> user approves (Phase 4). Phases 5–8 are the ingestion + enrichment work.
+> Phases 1–4 produce and refine the draft. Hold off on ingesting into G-Brain
+> until the user approves (Phase 4) — the review gate is the whole point of the
+> draft phase. Phases 5–8 are the ingestion + enrichment work.
 > Phase 9 always produces a follow-up (routed by meeting type → `followups/`).
 > Phase 10 runs the execution split (do-now vs task manager) when there are action items.
 
@@ -187,21 +189,24 @@ $GB files upload-raw <file> --page meetings/<slug> --type transcript
 ```
 
 For normal text transcripts this produces a git-tracked `.raw/` sidecar dir next
-to the meeting page. Record it ONLY as a `raw_transcript:` frontmatter pointer
-to that `.raw/` path (optionally also a `See Also` link). Never paste transcript
-content into the page body, and never leave the only reference pointing at an
-inbound media temp path.
+to the meeting page. Record it as a `raw_transcript:` frontmatter pointer to that
+`.raw/` path (optionally also a `See Also` link), and keep it there — the body
+stays free of transcript content, and the pointer should land on the `.raw/`
+sidecar rather than an inbound media temp path (those get cleaned up and the
+provenance link breaks).
 
-### Phase 3: Build the meeting-notes draft (do NOT ingest yet)
+### Phase 3: Build the meeting-notes draft (still pre-ingestion)
 
 Write the draft to `$BRAIN_DIR/meetings/<slug>.md` with frontmatter
-(`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`). **Use the body
-order for the notes format chosen in Step 0** — the standard order below, OR
-`variants/leadership-notes.md` if the **leadership** notes variant was selected. **Capture ALL available source metadata** — for a source-backed
-meeting (e.g. Fathom) that means `source`, `recording_id`, `fathom_url`, `share_url`,
-`duration_min` in frontmatter AND a `## Source & Metadata` block in the body. Don't
-drop fields the source gave you (share link, recording id, scheduled/recording times,
-language, recorded-by, attendee emails) — capture more, not less.
+(`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`). Use the body
+order for the notes format chosen in Step 0 — the standard order below, or
+`variants/leadership-notes.md` if the **leadership** notes variant was selected.
+Capture all available source metadata — for a source-backed meeting (e.g. Fathom)
+that means `source`, `recording_id`, `fathom_url`, `share_url`, `duration_min` in
+frontmatter and a `## Source & Metadata` block in the body. Keep every field the
+source gave you (share link, recording id, scheduled/recording times, language,
+recorded-by, attendee emails) — capture more, not less, since you can't recover a
+dropped field later without re-fetching.
 
 ```markdown
 # {Meeting Title} — {Date}
@@ -256,10 +261,12 @@ e.g. "- Send Ben the list of events I end up attending (promise)".}
 - Raw transcript: `meetings/<slug>.raw/<file>`
 ```
 
-### Phase 4: Review loop with the user (MANDATORY — before ingestion)
+### Phase 4: Review loop with the user (before ingestion)
 
-Show the user the current draft and iterate until it's right. **This is not
-optional, and it happens before any G-Brain ingestion.**
+Show the user the current draft and iterate until it's right. This always happens
+before any G-Brain ingestion — the review gate is the whole point of the draft
+phase, where the user catches attribution and scope errors while they're still
+cheap to fix.
 
 When showing the notes, attach the **actual canonical brain page file at its real
 in-brain path** (`$BRAIN_DIR/meetings/<slug>.md`) — the same file being
@@ -282,7 +289,7 @@ historical-breakdown ordering. Only proceed once the user approves.
 
 ### Phase 5: Ingest the approved meeting into G-Brain
 
-**Editing the `.md` on disk is NOT ingestion.** The engine (what search/retrieval
+**Editing the `.md` on disk is not ingestion.** The engine (what search/retrieval
 serves) is a separate store; a working-tree edit doesn't reach it. Push the
 approved file into the engine explicitly:
 
@@ -299,12 +306,14 @@ $GB get meetings/<slug> | grep -E '^## '   # headings must match the file
 If headings or `raw_transcript` differ, re-ingest until they match. Do not trust
 the on-disk file as proof of ingestion.
 
-### Phase 6: Attendee enrichment (MANDATORY)
+### Phase 6: Attendee enrichment
 
-For EACH attendee:
+Every attendee gets enriched — this is part of ingestion, not a follow-up chore,
+because an attendee without a people page is a mention the brain can't connect.
+For each attendee:
 1. `$GB search "{name}"` — does a people page exist?
-2. If NO → create via enrich skill (mandatory, not optional)
-3. If YES → update compiled truth with meeting context
+2. If no → create one via the enrich skill
+3. If yes → update compiled truth with meeting context
 4. Add a timeline entry on the person's page:
    `$GB timeline-add <person-slug> <date> "Attended <meeting-title>"`
 
@@ -314,9 +323,10 @@ For EACH attendee:
 need `$GB timeline-add` for dated events (auto-link handles links, not timeline
 entries).
 
-### Phase 7: Entity propagation (MANDATORY)
+### Phase 7: Entity propagation
 
-For each company, project, program, place, or concept discussed:
+Every company, project, program, place, or concept discussed gets propagated —
+like attendee enrichment, this is part of ingestion. For each one:
 1. Check the brain for an existing page
 2. Create/update as needed
 3. Add a timeline entry referencing the meeting
@@ -324,8 +334,8 @@ For each company, project, program, place, or concept discussed:
 
 ### Phase 8: Timeline merge
 
-The same event appears on ALL mentioned entities' timelines. If Alice met Bob at
-Acme Corp, the event goes on Alice's page, Bob's page, AND Acme Corp's page.
+The same event appears on every mentioned entity's timeline. If Alice met Bob at
+Acme Corp, the event goes on Alice's page, Bob's page, and Acme Corp's page.
 
 ### Phase 9: Follow-up (always) — route to the follow-up method
 
@@ -338,7 +348,7 @@ is chosen by **meeting type**, not brain — read and follow the matching file i
 | **Default** (1-on-1s, external, interviews, personal/EMS, buildpurdue non-team) | `followups/follow-up-message.md` | Personalized follow-up message to the other party |
 | buildpurdue **weekly team meeting** | `followups/team-recap.md` | Team recap message (ready to post to the team) |
 
-Default to the **follow-up message**; use the team recap ONLY for the buildpurdue weekly
+Default to the **follow-up message**; use the team recap only for the buildpurdue weekly
 team meeting. (A buildpurdue 1-on-1 gets a follow-up message, not a recap.) A new method
 later → add a `followups/<name>.md` + a row here.
 
@@ -375,6 +385,11 @@ team meeting: team recap) and, if there are action items, the Phase 10 execution
 (propose → confirm → add) as separate chat output.
 
 ## Anti-Patterns
+
+Running the phases in order, ingesting only after the user approves the draft, and
+treating attendee enrichment + entity propagation as part of ingestion keeps you
+clear of nearly everything below. The list is a backstop — recognize these failure
+modes and steer back to the phase that prevents them:
 
 - Blending the phases into one blob instead of running them in order
 - Treating G-Brain ingestion as a separate, optional step after approval rather

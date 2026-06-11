@@ -9,7 +9,7 @@ evidence behind them — not decisions (standard), org-running (leadership), coa
 
 Scope check: the subject is a customer / user / member you're learning *from*, and you're
 mining for truth. A peer/external **advice** call (where the other person is helping *you*)
-is NOT this — use **standard**. Coaching your own teammate is **leadership-1on1**.
+is not this — use **standard**. Coaching your own teammate is **leadership-1on1**.
 
 Everything else in the skill (frontmatter, `## Source & Metadata`, attendee enrichment,
 dual-brain, output variant, etc.) is unchanged; only the body sections differ.
