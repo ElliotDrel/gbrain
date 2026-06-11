@@ -104,7 +104,7 @@ These four are load-bearing. The rest of this skill is normal directive guidance
 For social/video URLs, run this once from the workspace root:
 
 ```bash
-node skills/media-ingest/scripts/get-supadata-key.mjs \
+node skills/media-ingest/scripts/provider-keys.mjs \
   | node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin
 ```
 
