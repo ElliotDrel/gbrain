@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Free-first local fetcher for YouTube via yt-dlp. If this path fails for any
-// reason (binary missing, no subtitles, extractor error), the caller should
-// fall back to the paid provider path.
+// Free-first local fetcher for social/video URLs via yt-dlp. If this path
+// fails for any reason (binary missing, no subtitles, extractor error), the
+// caller should fall back to the paid provider path.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,8 +23,9 @@ function firstDefined(...values) {
   return null;
 }
 
-function titleFallback(author) {
-  return `YouTube video by ${author || 'unknown'}`;
+function titleFallback(platform, author) {
+  const label = platform === 'x' ? 'post' : 'video';
+  return `${platform.charAt(0).toUpperCase() + platform.slice(1)} ${label} by ${author || 'unknown'}`;
 }
 
 function isoFromUploadDate(value) {
@@ -33,28 +34,35 @@ function isoFromUploadDate(value) {
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T00:00:00.000Z`;
 }
 
-function normalizeYouTubeMetadata(info, url) {
+function normalizeYtDlpMetadata(platform, info, url) {
+  const authorName = firstDefined(info.channel, info.uploader, info.creator, info.uploader_id, info.channel_id);
+  const authorUsername = firstDefined(
+    info.uploader_id,
+    info.channel_handle,
+    info.creator,
+    info.channel_id,
+  );
   return {
-    platform: 'youtube',
+    platform,
     id: firstDefined(info.id, info.display_id),
-    title: firstDefined(info.title, titleFallback(info.channel || info.uploader)),
+    title: firstDefined(info.title, titleFallback(platform, authorName)),
     description: info.description || '',
     createdAt: firstDefined(
       Number.isFinite(info.timestamp) ? new Date(info.timestamp * 1000).toISOString() : null,
       isoFromUploadDate(info.upload_date),
     ),
-    type: 'video',
+    type: info._type === 'playlist' ? 'playlist' : (platform === 'x' ? 'post' : 'video'),
     author: {
-      id: info.channel_id || null,
-      username: firstDefined(info.uploader_id, info.channel_handle),
-      displayName: firstDefined(info.channel, info.uploader, info.uploader_id),
+      id: firstDefined(info.channel_id, info.uploader_id, info.playlist_uploader_id) || null,
+      username: authorUsername,
+      displayName: authorName,
       isVerified: info.channel_is_verified ?? null,
-      url: firstDefined(info.channel_url, info.uploader_url),
+      url: firstDefined(info.channel_url, info.uploader_url, info.webpage_url_domain ? `https://${info.webpage_url_domain}/` : null),
     },
     media: {
       duration: Number.isFinite(info.duration) ? info.duration : null,
       videoUrl: firstDefined(info.webpage_url, url),
-      imageUrl: firstDefined(info.thumbnail, info.thumbnails?.[0]?.url),
+      imageUrl: firstDefined(info.thumbnail, info.thumbnails?.[0]?.url, info.thumbnail_url),
     },
     stats: {
       likes: info.like_count ?? null,
@@ -130,9 +138,9 @@ function pickSubtitleFile(dir, id) {
   return path.join(dir, candidates[0]);
 }
 
-export { normalizeYouTubeMetadata, parseJson3Transcript };
+export { normalizeYtDlpMetadata, parseJson3Transcript };
 
-export async function tryYtDlpFetch(url) {
+export async function tryYtDlpFetch(url, { platform = 'youtube' } = {}) {
   let missingCount = 0;
   for (const candidate of CANDIDATES) {
     const metaRun = await runCandidate(candidate, [
@@ -196,7 +204,7 @@ export async function tryYtDlpFetch(url) {
       return {
         ok: true,
         provider: 'yt-dlp',
-        metadata: normalizeYouTubeMetadata(info, url),
+        metadata: normalizeYtDlpMetadata(platform, info, url),
         transcript: {
           state: 'ok',
           text,
