@@ -1,6 +1,6 @@
 ---
 name: media-ingest
-version: 2.0.0
+version: 2.1.0
 description: |
   Ingest social/video, audio, PDF, book, screenshot, and GitHub-repo content
   into the brain as analyzed pages (not transcript dumps), with entity
@@ -60,6 +60,16 @@ what the content *means*, where it belongs, and how it connects to what's alread
 > **Before creating any page**, read `skills/_brain-filing-rules.md`. Tagging conventions live
 > in `conventions/tagging.md`; back-linking convention in `conventions/quality.md`.
 
+> **Operating mode — boil the ocean, one checkpoint at the end.** Ingest the whole item
+> autonomously — fetch, write the analyzed page, propagate every entity, back-link, sync —
+> making your own best call on any judgment (duplicate handling, merge-vs-new, a
+> transcript-less page) rather than stopping to ask. There is exactly **one** human-in-the-loop
+> moment: the final summary, where you report what was ingested, surface the judgment calls you
+> made (so Elliot can re-file), and — only if he didn't already give a reason when he sent the
+> item — ask once, "Why did you send me this?" If he answers, add `## Why I Saved This` in his
+> exact words and re-ingest; if he doesn't, the item is still fully ingested and linked. The
+> only hard stop before the end is a failed fetch (a non-zero exit can't be ingested).
+
 ## What a finished ingest looks like (the contract)
 
 Every ingest produces:
@@ -71,14 +81,19 @@ Every ingest produces:
 - Every person and company that has a brain page **back-linked** from this page, and a
   timeline entry added on theirs. The item is not fully ingested until this is done.
 - For an intentionally-saved social/video item: a `## Why I Saved This` section in Elliot's
-  own words (see the hard guardrails).
+  own words **when he provides them** — either in how he sent the item, or in answer to the
+  single question asked at the final summary. Until then it's omitted, and the page is
+  complete without it (see the hard guardrails).
 
 <hard_guardrails>
 These four are load-bearing. The rest of this skill is normal directive guidance; these are not.
 
-1. **Never invent `## Why I Saved This`.** It is Elliot's signal and only he can give it. Ask
-   while the fetch runs, build the rest of the page first, and until he gives his exact words,
-   omit the section entirely — no placeholder, no `_Pending_`, no inferred reason.
+1. **Never invent `## Why I Saved This`.** It is Elliot's signal and only he can give it. If
+   he gave a reason when he sent the item, use his exact words. Otherwise ingest the whole
+   item without the section and ask for it once, in the final summary ("Why did you send me
+   this?"). If he answers, add the section in his exact words and re-ingest; if he doesn't,
+   leave it out — the page is complete either way. No placeholder, no `_Pending_`, no inferred
+   reason, ever.
 2. **Never hand-write a social/video raw file**, and never re-run the fetch script to paper
    over a failure. ScrapeCreators bills per request and the script already retried internally.
    On failure, surface the script's exact error to Elliot and stop.
@@ -117,10 +132,10 @@ exit code and the stderr message:
 | Signal from the script | Your action |
 |---|---|
 | Exit `0`, transcript present | Proceed to Phase 2. |
-| Exit `0`, `ALREADY INGESTED` | Do **not** re-file. Tell Elliot it's already ingested, cite the printed path / its concept page, and ask what he wants changed before doing more. |
-| Exit `0`, transcript `empty` (no captions/audio) | Tell Elliot the video has no transcript and confirm before building a transcript-less page. |
-| `⚠ POSSIBLE DUPLICATE CONTENT` (same clip cross-posted / a trimmed cut) | Surface the script's comparison to Elliot. **Prefer adding this URL as an extra source on the existing concept page** ("Also posted on…") over filing a new page. File separately only if he confirms it's genuinely different. Never auto-skip — it's a judgment call. |
-| Any non-zero exit, or a `>>> SURFACE THIS TO THE USER` line | **Stop.** Relay the exact HTTP status + body the script printed. Do not re-run, do not hand-write the raw. |
+| Exit `0`, `ALREADY INGESTED` | Do **not** re-file. This is the (immediate) final message: tell Elliot it's already ingested, cite the printed path / its concept page, and ask what he'd like changed. |
+| Exit `0`, transcript `empty` (no captions/audio) | Build a transcript-less page autonomously from the description + metadata. Don't stop to confirm — note in the final summary that there was no transcript. |
+| `⚠ POSSIBLE DUPLICATE CONTENT` (same clip cross-posted / a trimmed cut) | Make the call yourself: **default to adding this URL as an extra source on the existing concept page** ("Also posted on…"); file a separate page only when the content is clearly distinct. Note the decision (and the script's comparison) in the final summary so Elliot can re-file if he disagrees. |
+| Any non-zero exit, or a `>>> SURFACE THIS TO THE USER` line | **Stop.** Relay the exact HTTP status + body the script printed. Do not re-run, do not hand-write the raw. (A failed fetch can't be ingested — this is the one place you stop early.) |
 
 Exit codes, for reference: `0` ok / already-ingested · `1` usage · `2` no API key ·
 `3` metadata error · `4` transcript error.
@@ -156,18 +171,16 @@ matching misses it. Idea-sameness is semantic, so search the brain with the **`q
   - **Related but distinct** → file the new page and cross-link both ways (`## See Also`).
   - **Novel** → file fresh.
 
-When the merge-vs-new call is ambiguous, surface it to Elliot. **Quote the queries you ran and
-the top hits in your report** so the decision is auditable.
+When the merge-vs-new call is ambiguous, make your best call and proceed — don't stop to ask.
+**Quote the queries you ran and the top hits in the final summary** so the decision is auditable
+and Elliot can re-file if he disagrees.
 </concept_dedup>
 
-For an intentionally-saved social/video item, ask Elliot directly (while the fetch runs, not as
-a gate):
-
-1. Why did you save this specific video?
-2. Any notes or takeaways you want to highlight — what hit hardest, what you want to remember?
-
-Capture his **exact phrasing** as `## Why I Saved This`. Until he replies, build the rest of the
-page and omit that section (hard guardrail 1).
+For an intentionally-saved social/video item, the `## Why I Saved This` section is Elliot's
+own words. If he already gave a reason in how he sent the item, capture his **exact phrasing**
+there now. Otherwise omit the section and build the rest of the page in full — the single
+question ("Why did you send me this?") is asked once at the final summary (Output), and if he
+answers you add the section in his exact words and re-ingest (hard guardrail 1). Never infer it.
 
 File by primary subject:
 - reusable mental model / framework / technique → `concepts/<slug>.md`
@@ -260,15 +273,24 @@ The item is not fully ingested until entity propagation is complete.
 
 Run `gbrain sync` to update the index.
 
-## Output
+## Output — the one checkpoint
 
-Report to Elliot:
+Everything above runs autonomously. The final summary is the single place Elliot enters the
+loop. Report to him:
 
 - General: `Ingested {title}: {N} entities detected, {N} pages updated.`
 - Social/video: `Ingested {title} ({platform}): raw at sources/social/{platform}-{id}.txt,
   page at {path}, {N} entities propagated.`
 
-Include the concept-dedup queries you ran and the top hits, so the merge-vs-new decision is auditable.
+Then, in the same message:
+
+- Include the concept-dedup queries you ran and the top hits, plus any judgment call you made
+  (duplicate handling, merge-vs-new, a transcript-less page), so Elliot can correct or re-file.
+- **If `## Why I Saved This` is not already filled** (he didn't give a reason when he sent the
+  item), ask exactly once: **"Why did you send me this?"** If he answers, add the section in his
+  exact words and re-ingest (`gbrain sync`). If he doesn't, leave it out — the item is already
+  fully ingested and linked; there's just no `Why I Saved This`. Either way the page is complete,
+  not half-done.
 
 ## Anti-patterns
 
@@ -276,8 +298,12 @@ Each is paired with what to do instead.
 
 - **Dumping a raw transcript without analysis** → write key points and structure; the transcript
   lives in the raw file, not the page.
-- **Inferring or placeholding `## Why I Saved This`** → omit the section until Elliot gives his
-  exact words (hard guardrail 1).
+- **Inferring or placeholding `## Why I Saved This`** → use Elliot's exact words if he gave a
+  reason when sending; otherwise omit it and ask once at the final summary, adding it and
+  re-ingesting only if he answers (hard guardrail 1).
+- **Gating the work mid-flow** — confirming before building a transcript-less page, or stopping
+  on a duplicate / merge-vs-new judgment call → make the call, ingest, and surface it in the
+  final summary for Elliot to re-file. The only early stop is a failed fetch.
 - **Skipping entity extraction** ("I'll do that separately") → propagate before calling it done.
 - **Filing raw ingest by format** (`media/videos/…`) → file by subject. (Format-prefixed paths
   like `media/books/<slug>-personalized.md` are sanctioned only for synthesized one-of-one

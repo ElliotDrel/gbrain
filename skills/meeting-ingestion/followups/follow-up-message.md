@@ -5,9 +5,9 @@ external calls, interviews, personal/EMS meetings, and buildpurdue meetings that
 not the weekly team meeting. (Only the buildpurdue **team meeting** uses
 `team-recap.md` instead.)
 
-Run only after the notes are approved + ingested (router `SKILL.md` Phases 1–8), and
-produce it as **separate chat output — never inside the notes file**. Don't auto-send;
-draft it for the user.
+Draft this after the meeting page is ingested and enriched (router `SKILL.md` Phase 8),
+as **separate chat output — never inside the notes file**. Leave it **ready to send and
+do not auto-send it** — the user reviews and sends it from the final delivery (Phase 10).
 
 ## What a good follow-up does
 - Addressed to the **other party** (the person/people on the call), in the user's voice.
