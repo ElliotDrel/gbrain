@@ -2760,6 +2760,10 @@ export async function chat(opts: ChatOpts): Promise<ChatResult> {
   // is wrapped so a failure can NEVER affect the real runtime result below.
   const shadowModels = opts._skipShadow ? [] : getShadowModels(modelStrEarly);
   const shadowTier = shadowModels.length > 0 ? classifyShadowTier(modelStrEarly) : null;
+  // Register each shadow model as an extended model so assertTouchpoint allows
+  // arbitrary user-supplied ids (e.g. gpt-4.1, gpt-5.4). Unrecognised ids then
+  // fail at the HTTP layer with a clear API error rather than at config validation.
+  shadowModels.forEach(registerExtendedModel);
   const shadowPromises: Promise<ShadowOutcome>[] = shadowModels.map((sm) =>
     chat({ ...opts, model: sm, _skipShadow: true })
       .then((r): ShadowOutcome => ({ model: sm, result: r }))
