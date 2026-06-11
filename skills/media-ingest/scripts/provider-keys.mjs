@@ -10,7 +10,7 @@ const envPath = path.join(os.homedir(), '.openclaw', '.env');
 const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
 const KEY_NAMES = ['SCRAPECREATORS_API_KEY', 'SCRAPE_CREATORS_API_KEY'];
 
-function resolveFromDotEnv() {
+function resolveScrapeCreatorsFromDotEnv() {
   try {
     const raw = fs.readFileSync(envPath, 'utf8');
     for (const line of raw.split(/\r?\n/)) {
@@ -43,7 +43,7 @@ function resolveSupadataFromConfig() {
 const scrapeCreatorsApiKey =
   process.env.SCRAPECREATORS_API_KEY ||
   process.env.SCRAPE_CREATORS_API_KEY ||
-  resolveFromDotEnv();
+  resolveScrapeCreatorsFromDotEnv();
 if (!scrapeCreatorsApiKey) {
   console.error('No SCRAPECREATORS_API_KEY / SCRAPE_CREATORS_API_KEY found.');
   process.exit(2);

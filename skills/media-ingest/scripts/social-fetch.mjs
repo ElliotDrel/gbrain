@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// social-fetch.mjs — fetch a social/video URL's transcript + metadata via
-// ScrapeCreators and write ONE raw file: <brain>/sources/social/<platform>-<id>.txt
+// social-fetch.mjs — fetch a social/video URL's transcript + metadata and write
+// ONE raw file: <brain>/sources/social/<platform>-<id>.txt
 //
 // NOTE: the file is .txt ON PURPOSE. gbrain sync only ingests .md pages into
 // the engine, so a .txt keeps the raw as disk-only provenance (same mechanism
@@ -32,8 +32,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { resolve as resolveUrl } from './canonical-url.mjs';
 import { findContentDuplicates } from './content-fingerprint.mjs';
-import { existingOkFile, findCitingPages } from './social-local-state.mjs';
-import { getMetadata, getTranscript } from './supadata-client.mjs';
+import { getMetadata, getTranscript } from './provider-client.mjs';
 
 const SURFACE = '>>> SURFACE THIS TO THE USER. Built-in transcript retries (5s, 30s, 60s) were already exhausted in this invocation. Do NOT auto-retry again without Elliot deciding to spend another request.';
 
@@ -48,6 +47,50 @@ if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>] [-
 // ---- dedup (deterministic, keyed by the post's canonical shortcode/id) ----
 const socialDir = path.join(brain, 'sources', 'social');
 const sanitizeId = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
+function existingOkFile(dir, id) {
+  if (!id) return null;
+  const want = String(id).replace(/[^A-Za-z0-9._-]/g, '_');
+  try {
+    for (const fileName of fs.readdirSync(dir)) {
+      if (!fileName.endsWith(`-${want}.txt`)) continue;
+      const candidate = path.join(dir, fileName);
+      const head = fs.readFileSync(candidate, 'utf8').slice(0, 4000);
+      return /^_transcript_state:\s*"ok"/m.test(head) ? candidate : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+function findCitingPages(brainDir, needles) {
+  const hits = new Set();
+  const skip = new Set(['sources', 'node_modules']);
+  (function walk(dir) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!skip.has(entry.name)) walk(fullPath);
+        continue;
+      }
+      if (!entry.name.endsWith('.md')) continue;
+      let content = '';
+      try {
+        content = fs.readFileSync(fullPath, 'utf8');
+      } catch {
+        continue;
+      }
+      if (needles.some((needle) => content.includes(needle))) hits.add(fullPath);
+    }
+  })(brainDir);
+  return [...hits];
+}
 async function readStdinText() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);

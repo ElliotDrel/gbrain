@@ -82,7 +82,7 @@ Every mention of a person or company with a brain page MUST create a back-link.
 
 | Format | Action |
 |--------|--------|
-| Social/video URL (YouTube, TikTok, Instagram, X, Facebook) | Run deterministic ScrapeCreators fetch: `node skills/media-ingest/scripts/get-supadata-key.mjs \| node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin` |
+| Social/video URL (YouTube, TikTok, Instagram, X, Facebook) | Run deterministic fetch: `node skills/media-ingest/scripts/provider-keys.mjs \| node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin` |
 | Audio file | Transcribe with available STT service |
 | PDF | Extract text (OCR if needed) |
 | Book PDF | Extract text, identify chapters/sections |
@@ -96,7 +96,7 @@ Do NOT route to another top-level skill first.
 
 ```bash
 # Run from the workspace root (the agent's cwd). The script lives WITH this skill.
-node skills/media-ingest/scripts/get-supadata-key.mjs \
+node skills/media-ingest/scripts/provider-keys.mjs \
   | node skills/media-ingest/scripts/social-fetch.mjs "<url>" --api-key-stdin
 ```
 

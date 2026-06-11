@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Provider HTTP client kept separate from local file I/O so code-safety audits
 // can distinguish intentional API traffic from local dedup/provenance logic.
-// The filename stays put for compatibility with existing references.
 
 const SCRAPECREATORS_BASE = 'https://api.scrapecreators.com';
 const SUPADATA_BASE = 'https://api.supadata.ai/v1';
@@ -348,7 +347,7 @@ async function getSupadataWithInternalErrorRetry(apiKey, endpoint, params, conte
   let last = await getSupadata(apiKey, endpoint, params);
   for (const delayMs of INTERNAL_ERROR_RETRY_DELAYS_MS) {
     if (!isSupadataInternalErrorResponse(last)) return last;
-    console.error(`[supadata-client] ${context} hit internal-error; retrying in ${Math.floor(delayMs / 1000)}s`);
+    console.error(`[provider-client:supadata] ${context} hit internal-error; retrying in ${Math.floor(delayMs / 1000)}s`);
     await sleep(delayMs);
     last = await getSupadata(apiKey, endpoint, params);
   }
@@ -395,7 +394,7 @@ async function getSupadataTranscript(apiKey, url) {
   return { state: 'error', text: '', segments: [], error: `HTTP ${first.status}: ${JSON.stringify(first.body)}`, provider: 'supadata', fallbackUsed: true };
 }
 
-export function shouldFallbackToSupadata({ durationSeconds, transcriptState, supadataApiKey }) {
+function shouldFallbackToSupadata({ durationSeconds, transcriptState, supadataApiKey }) {
   return Number.isFinite(durationSeconds) && durationSeconds > 120 && transcriptState === 'error' && !!supadataApiKey;
 }
 
@@ -414,7 +413,7 @@ function routesFor(platform) {
   }
 }
 
-export { parseWebVtt, normalizeMetadata, normalizeTranscript };
+export { parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata };
 
 export async function getMetadata(apiKeys, platform, url) {
   const routes = routesFor(platform);
