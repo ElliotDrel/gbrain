@@ -46,6 +46,12 @@ import type {
   TouchpointKind,
 } from './types.ts';
 import { resolveRecipe, assertTouchpoint, parseModelId } from './model-resolver.ts';
+import {
+  getShadowModels,
+  classifyShadowTier,
+  writeShadowComparison,
+  type ShadowOutcome,
+} from './shadow-compare.ts';
 import { resolveModel, TIER_DEFAULTS } from '../model-config.ts';
 import type { BrainEngine } from '../engine.ts';
 import { dimsProviderOptions } from './dims.ts';
@@ -2439,6 +2445,12 @@ export interface ChatOpts {
    * ignored on providers without `supports_prompt_cache`.
    */
   cacheSystem?: boolean;
+  /**
+   * Internal: set when this chat() call IS a shadow-comparison run, so the
+   * shadow harness does not recurse (a shadow never spawns its own shadows).
+   * Not part of the public contract — see ./shadow-compare.ts.
+   */
+  _skipShadow?: boolean;
 }
 
 /**
@@ -2742,6 +2754,18 @@ export async function chat(opts: ChatOpts): Promise<ChatResult> {
     }
   }
 
+  // Shadow comparison (local A/B harness — see ./shadow-compare.ts). Fire the
+  // SAME prompt at the configured alternative model(s) IN PARALLEL with the
+  // real call. _skipShadow guards against recursion. Best-effort: every shadow
+  // is wrapped so a failure can NEVER affect the real runtime result below.
+  const shadowModels = opts._skipShadow ? [] : getShadowModels(modelStrEarly);
+  const shadowTier = shadowModels.length > 0 ? classifyShadowTier(modelStrEarly) : null;
+  const shadowPromises: Promise<ShadowOutcome>[] = shadowModels.map((sm) =>
+    chat({ ...opts, model: sm, _skipShadow: true })
+      .then((r): ShadowOutcome => ({ model: sm, result: r }))
+      .catch((err): ShadowOutcome => ({ model: sm, error: String(err) })),
+  );
+
   const modelStr = modelStrEarly;
   const { model, recipe, modelId } = await resolveChatProvider(modelStr);
 
@@ -2837,7 +2861,7 @@ export async function chat(opts: ChatOpts): Promise<ChatResult> {
     const outTok = Number(usage.outputTokens ?? usage.completionTokens ?? 0);
     _recordBudget(`${recipe.id}:${modelId}`, inTok, outTok);
 
-    return {
+    const realResult: ChatResult = {
       text: blocks.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join(''),
       blocks,
       stopReason: mapStopReason((result as any).finishReason, providerMetadata),
@@ -2851,6 +2875,25 @@ export async function chat(opts: ChatOpts): Promise<ChatResult> {
       providerId: recipe.id,
       providerMetadata,
     };
+
+    // Shadow comparison: once every shadow settles, append one JSON record.
+    // Detached from the runtime path — never awaited, never throws upward.
+    if (shadowPromises.length > 0 && shadowTier) {
+      void Promise.all(shadowPromises)
+        .then((shadows) =>
+          writeShadowComparison({
+            opts,
+            requestedModel: modelStrEarly,
+            tier: shadowTier,
+            real: realResult,
+            shadows,
+            now: new Date(),
+          }),
+        )
+        .catch(() => {});
+    }
+
+    return realResult;
   } catch (err) {
     // Pessimistic fallback (A3 amended): when err.usage isn't there, charge
     // the worst-case ceiling — better to overcount on failure than under.
