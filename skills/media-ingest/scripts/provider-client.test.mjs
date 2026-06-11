@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getTranscript, parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata } from './supadata-client.mjs';
+import { getTranscript, parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata } from './provider-client.mjs';
 
 test('parseWebVtt preserves timestamp offsets and text', () => {
   const segments = parseWebVtt(`WEBVTT
