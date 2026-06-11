@@ -5,8 +5,9 @@ description: |
   Ingest social/video, audio, PDF, book, screenshot, and GitHub-repo content
   into the brain as analyzed pages (not transcript dumps), with entity
   extraction and back-link propagation. Social/short-form video runs through a
-  deterministic ScrapeCreators fetch script that captures transcript + metadata
-  in one raw file.
+  deterministic fetch script that prefers free local YouTube extraction via
+  yt-dlp and falls back to the paid provider path only when needed, capturing
+  transcript + metadata in one raw file.
 triggers:
   - "watch this video"
   - "process this YouTube link"
@@ -130,7 +131,8 @@ node skills/media-ingest/scripts/provider-keys.mjs \
 ```
 
 The script handles everything deterministic -- transcript + metadata in one `.txt`, URL and
-cross-content deduplication, internal retries, key resolution. **You do not narrate or repeat
+cross-content deduplication, internal retries, and provider selection. For YouTube it tries the
+free local `yt-dlp` path first; only if that fails does it spend the paid API path. **You do not narrate or repeat
 that work; you react to what it prints.** It writes the raw-file path to stdout and any
 required action to stderr. Read stderr and obey it. Your decision is driven entirely by the
 exit code and the stderr message:
