@@ -33,6 +33,7 @@ import os from 'node:os';
 import { resolve as resolveUrl } from './canonical-url.mjs';
 import { findContentDuplicates } from './content-fingerprint.mjs';
 import { getMetadata, getTranscript } from './provider-client.mjs';
+import { tryYtDlpFetch } from './yt-dlp-client.mjs';
 
 const SURFACE = '>>> SURFACE THIS TO THE USER. Built-in transcript retries (5s, 30s, 60s) were already exhausted in this invocation. Do NOT auto-retry again without Elliot deciding to spend another request.';
 
@@ -126,7 +127,6 @@ skipIfDuplicate(canon?.id, canon?.resolvedFrom ? 'redirect-precheck' : 'url-prec
 
 // ---- api key (stdin only) ----
 const apiKeys = parseApiKeys(apiKeyFromStdin ? await readStdinText() : null);
-if (!apiKeys.scrapeCreatorsApiKey) { console.error('No SCRAPECREATORS_API_KEY found.'); console.error(SURFACE); process.exit(2); }
 
 const fmtTime = (ms) => {
   const s = Math.floor((ms || 0) / 1000);
@@ -150,13 +150,33 @@ if (!platform) {
 // some valid input shapes like IG `/reels/<id>` and require the normalized
 // `/reel/<id>`. The resolver already produced that canonical form.
 const fetchUrl = canon?.canonicalUrl || url;
-const meta = await getMetadata(apiKeys, platform, fetchUrl);
-if (meta.status !== 200 || !meta.body?.id) {
-  console.error(`[social-fetch] METADATA ERROR — HTTP ${meta.status}: ${JSON.stringify(meta.body)}`);
-  console.error(SURFACE);
-  process.exit(3);
+let m;
+let t;
+
+if (platform === 'youtube') {
+  const local = await tryYtDlpFetch(fetchUrl);
+  if (local.ok) {
+    m = local.metadata;
+    t = local.transcript;
+    console.error('[social-fetch] yt-dlp local transcript fetch succeeded; skipping paid transcript provider.');
+  } else {
+    console.error(`[social-fetch] yt-dlp local path unavailable/failed (${local.reason}); falling back to paid provider path.`);
+  }
 }
-const m = meta.body;
+
+if (!m || !t) {
+  if (!apiKeys.scrapeCreatorsApiKey) { console.error('No SCRAPECREATORS_API_KEY found.'); console.error(SURFACE); process.exit(2); }
+  const meta = await getMetadata(apiKeys, platform, fetchUrl);
+  if (meta.status !== 200 || !meta.body?.id) {
+    console.error(`[social-fetch] METADATA ERROR — HTTP ${meta.status}: ${JSON.stringify(meta.body)}`);
+    console.error(SURFACE);
+    process.exit(3);
+  }
+  m = meta.body;
+  const durationSeconds = m.media?.duration ?? m.duration ?? null;
+  t = await getTranscript(apiKeys, platform, fetchUrl, { durationSeconds });
+}
+
 // File/dedup key = the deterministic, URL-derived canonical id (the post's
 // SHORTCODE for IG, the stable video id for other platforms), NOT the provider's
 // numeric media id (which differs per provider and would orphan files on a
@@ -165,8 +185,6 @@ const keyId = canon?.id || m.id;
 // GATE 2 — authoritative backstop on the canonical id, before the costly
 // transcript call. Catches URL shapes GATE 1's regex didn't recognize.
 skipIfDuplicate(keyId, 'metadata-id');
-const durationSeconds = m.media?.duration ?? m.duration ?? null;
-const t = await getTranscript(apiKeys, platform, fetchUrl, { durationSeconds });
 const id = sanitizeId(keyId);
 const dir = socialDir;
 fs.mkdirSync(dir, { recursive: true });
@@ -184,9 +202,9 @@ const front = {
   ...m,
   _source_url: url,
   _canonical_url: canon?.canonicalUrl || null,
-  _duration: durationSeconds,
+  _duration: m.media?.duration ?? m.duration ?? null,
   _fetched_at: new Date().toISOString(),
-  _provider: 'scrapecreators',
+  _provider: t.provider === 'yt-dlp' ? 'yt-dlp' : 'scrapecreators',
   _transcript_provider: t.provider || 'scrapecreators',
   _transcript_state: t.state,
   _transcript_timestamped: timestamped,
