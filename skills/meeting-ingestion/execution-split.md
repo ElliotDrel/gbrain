@@ -22,16 +22,17 @@ Only concrete next moves become tasks — a vague target ("get to 15 interviews"
   per-brain): buildpurdue items → buildpurdue task page, personal → personal. Use that
   brain's `$GB` / the `daily-task-manager` skill against that brain — never `--brain`.
 
-## Flow (propose → confirm → add)
-1. **Propose the split** to the user as chat output: list the **Do now** items (with what
-   you'll do) and the **Track** items (each with proposed owner=user, priority P0–P3, and
-   a due date — default the due date to the next meeting when none was stated).
-2. **Wait for the user's confirmation** before writing any task to the brain — the user
-   confirms (and may re-bucket / edit) first. (This is the standing preference: propose,
-   then add on confirm.)
-3. On confirm: execute the **Do now** items, and add the **Track** items to the brain's
-   `ops/tasks.md` via the `daily-task-manager` skill (owner, priority, due date). Report
-   what was done and what was added.
+## Flow (split → do now → add tracked tasks)
+1. **Split** each action item into **Do now** vs **Track** (each Track item with
+   owner=user, priority P0–P3, and a due date — default to the next meeting when none was
+   stated).
+2. **Execute the Do now items** immediately, or tee up the artifact (draft the email/doc),
+   then mark them done.
+3. **Add the user's own Track items** to the brain's `ops/tasks.md` via the
+   `daily-task-manager` skill (owner, priority, due date) — automatically, without waiting
+   for confirmation. The user reviews the result at the meeting flow's final delivery
+   (router `SKILL.md` Phase 10) and can re-bucket or edit there.
+4. **Surface the split** in that final delivery: what you did now, and the tasks you added.
 
 ## Notes
 - This is separate from the follow-up method — a meeting always gets a follow-up; it only

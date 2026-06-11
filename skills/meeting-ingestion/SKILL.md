@@ -1,14 +1,15 @@
 ---
 name: meeting-ingestion
-version: 2.1.0
+version: 2.2.0
 description: |
   Ingest meeting transcripts into brain pages with attendee enrichment, entity
   propagation, and timeline merge — AND run the full post-meeting flow: build a
   structured notes draft (Executive Summary → Key Takeaways → Key Decisions →
   Learnings or Useful Later → Action Items → Next Steps → Meeting Historical
-  Breakdown), review it with the
-  user before ingesting, then draft the follow-up and split out execution. A
-  meeting is not fully ingested until the enrich skill has processed every entity.
+  Breakdown), ingest it end to end into the brain autonomously, then draft the
+  follow-up and run the execution split — presenting it all in one review
+  checkpoint at the very end. A meeting is not fully ingested until the enrich
+  skill has processed every entity.
 triggers:
   - "meeting transcript"
   - "process this meeting"
@@ -49,12 +50,22 @@ writes_to:
 
 > **Filing rule:** Read `skills/_brain-filing-rules.md` before creating any new page.
 >
-> **v2.0.0 — merged skill.** This skill now covers the full post-meeting flow
-> end to end, so you only invoke ONE skill per meeting. It still does everything
-> the old meeting-ingestion did (attendee enrichment, entity propagation,
-> timeline merge, back-links) AND adds the structured-notes + review-before-ingest
-> + follow-up + execution behavior that used to live in the separate
-> `post-meeting-flow` skill.
+> **Operating mode — boil the ocean, one checkpoint at the end.** Run the entire
+> flow autonomously — build the notes, ingest them, enrich attendees, propagate
+> entities, merge timelines, commit and push, draft the follow-up/recap, and run
+> the execution split — *before* you stop for the user. There is exactly **one**
+> human-in-the-loop checkpoint, and it is the final delivery message: you present
+> the finished work (ingest report + commit link + ready-to-send follow-up/recap +
+> the execution-split summary) and invite corrections. If the user flags anything,
+> go back and fix it — re-ingest, re-commit, update tasks — then re-deliver. Doing
+> everything and tweaking afterward beats gating the work and waiting. The one
+> thing you never do without the user is *send* an outward-facing message.
+>
+> **v2.0.0 — merged skill.** This skill covers the full post-meeting flow end to
+> end, so you invoke one skill per meeting: it does the attendee enrichment, entity
+> propagation, timeline merge, and back-links of the old meeting-ingestion, plus
+> the structured-notes + follow-up + execution behavior that used to live in the
+> separate `post-meeting-flow` skill.
 
 ## Step 0 — pick the target brain (DO THIS FIRST)
 
@@ -117,7 +128,8 @@ is unchanged. (New notes variant later → add a `variants/<type>-notes.md` + a 
 
 This skill guarantees:
 
-- A structured meeting-notes **draft** is built before any ingestion.
+- A structured meeting-notes **draft** is built, then ingested in the same pass —
+  there is no separate pre-ingestion approval gate.
 - The notes begin with an `Executive Summary`, followed — in this fixed order —
   by `Key Takeaways`, then `Key Decisions` (if present), then `Learnings or
   Useful Later` (if present), then `Action Items`, then `Next Steps`. These
@@ -140,21 +152,28 @@ This skill guarantees:
   `raw_transcript:` pointer in the page **frontmatter** (a brain-relative path
   into the `.raw/` sidecar), optionally also a link under `See Also`. Never point
   at an inbound media temp path (`.openclaw/media/inbound/...`).
-- The draft is **shown to the user for review before ingestion happens**, and the
-  agent iterates until the user is satisfied. Ingestion happens only after approval.
-- **At the approval checkpoint, the user gets the canonical brain file path AND the
-  clickable GitHub commit link for the exact pushed draft commit under review.** If the
-  draft changes during the review loop, the agent updates the same canonical file, makes
-  a fresh commit, pushes it, and surfaces the new commit link before asking for approval
-  again.
+- The full flow runs autonomously to completion before the user is asked anything:
+  notes built and ingested, attendees enriched, entities propagated, timelines
+  merged, the work committed and pushed, the follow-up/recap drafted, and the
+  execution split run (do-now items executed, the user's own tracked tasks added).
+- There is **exactly one human-in-the-loop checkpoint, and it is the final delivery
+  message** — it carries the canonical brain file path, the clickable GitHub commit
+  link for the pushed work, the ready-to-send follow-up/recap, and the
+  execution-split summary. The user reviews everything there.
+- If the user flags an issue after delivery, the agent goes back and fixes it —
+  updating the canonical file, re-ingesting, making a fresh commit, pushing again,
+  surfacing the new commit link, and updating tasks/follow-up as needed — then
+  re-delivers. Tweaking after the fact replaces gating before the fact.
+- Outward-facing messages (the follow-up and the team recap) are **drafted
+  ready-to-send and never auto-sent** — sending stays the user's call.
 - Every attendee gets a people page (created or updated).
 - Every company/project discussed gets entity propagation.
 - Timeline entries on all mentioned entities (timeline merge).
 - A meeting is not fully ingested until enrich runs for every entity.
 - Back-links created bidirectionally.
-- A follow-up is always produced (Phase 9, routed by meeting type → `followups/`), plus
-  an execution split when there are action items (Phase 10, `execution-split.md`) — both
-  **separately, after** the notes are clean, never embedded inside the notes file.
+- A follow-up is always produced (routed by meeting type → `followups/`), plus an
+  execution split when there are action items (`execution-split.md`) — both produced
+  as separate chat output, never embedded inside the notes file.
 
 > **Convention:** See `skills/conventions/quality.md` for Iron Law back-linking.
 
@@ -164,18 +183,18 @@ not negotiable.
 
 ## Phases
 
-> Phases 1–4 produce and refine the draft. Hold off on ingesting into G-Brain
-> until the user approves (Phase 4) — the review gate is the whole point of the
-> draft phase. Phases 5–8 are the ingestion + enrichment work.
-> Phase 9 always produces a follow-up (routed by meeting type → `followups/`).
-> Phase 10 runs the execution split (do-now vs task manager) when there are action items.
+> Run these in order, end to end, without stopping for approval. Phases 1–3 build
+> the notes; Phases 4–7 ingest and enrich; Phase 8 drafts the follow-up; Phase 9
+> runs the execution split; Phase 10 commits, pushes, and delivers the single
+> review checkpoint. The user enters the loop only at Phase 10.
 
 ### Phase 1: Parse the transcript
 
 Extract from the transcript:
 - Attendees (names, roles if available). **Speaker labels (A/B) and ASR names are
-  unreliable — confirm who is who with the user when it is ambiguous before
-  attributing quotes or actions.**
+  unreliable — attribute from context as best you can, and flag any uncertain
+  attributions in the final delivery so the user can correct them there. Don't stop
+  mid-flow to ask.**
 - Date, time, duration
 - Key topics discussed
 - Decisions, action items (with owners), and **promises/commitments the user
@@ -195,7 +214,7 @@ stays free of transcript content, and the pointer should land on the `.raw/`
 sidecar rather than an inbound media temp path (those get cleaned up and the
 provenance link breaks).
 
-### Phase 3: Build the meeting-notes draft (still pre-ingestion)
+### Phase 3: Build the meeting-notes draft
 
 Write the draft to `$BRAIN_DIR/meetings/<slug>.md` with frontmatter
 (`type: meeting`, `title`, `date`, `raw_transcript:` pointer, `tags`). Use the body
@@ -261,52 +280,27 @@ e.g. "- Send Ben the list of events I end up attending (promise)".}
 - Raw transcript: `meetings/<slug>.raw/<file>`
 ```
 
-### Phase 4: Review loop with the user (before ingestion)
+### Phase 4: Ingest the meeting into G-Brain (no approval gate)
 
-Show the user the current draft and iterate until it's right. This always happens
-before any G-Brain ingestion — the review gate is the whole point of the draft
-phase, where the user catches attribution and scope errors while they're still
-cheap to fix.
-
-When showing the notes, attach the **actual canonical brain page file at its real
-in-brain path** (`$BRAIN_DIR/meetings/<slug>.md`) — the same file being
-edited in place, the same path on every iteration. Never attach a temp copy, a
-regenerated duplicate, or an inbound-media path. If the surface can't attach,
-quote the relevant sections and give that same path.
-
-**Before asking for approval, commit the current draft state and push it.** That
-commit must include the canonical meeting draft file and any git-tracked raw sidecar
-created for the review. Resolve the repository's push remote and surface the
-GitHub commit link in the approval-checkpoint recap, so the user can inspect the
-exact version they are approving. If you revise the draft again before approval,
-update the same canonical file, make a fresh commit, push again, and show the new
-commit link before asking for approval again.
-
-Stay in the loop until the user is satisfied: tighten takeaways, fix missing
-action items, correct names/links/people/companies (diarization is unreliable —
-expect attribution fixes), trim overreach, improve the summary and the
-historical-breakdown ordering. Only proceed once the user approves.
-
-### Phase 5: Ingest the approved meeting into G-Brain
-
-**Editing the `.md` on disk is not ingestion.** The engine (what search/retrieval
-serves) is a separate store; a working-tree edit doesn't reach it. Push the
-approved file into the engine explicitly:
+Ingest as soon as the draft is written — you do not wait for the user. **Editing
+the `.md` on disk is not ingestion.** The engine (what search/retrieval serves) is
+a separate store; a working-tree edit doesn't reach it. Push the file into the
+engine explicitly:
 
 ```bash
 $GB capture --file $BRAIN_DIR/meetings/<slug>.md --slug meetings/<slug> --type meeting
 ```
 
-Then verify the engine matches the reviewed file before declaring it ingested:
+Then verify the engine matches the file before treating it as ingested:
 
 ```bash
 $GB get meetings/<slug> | grep -E '^## '   # headings must match the file
 ```
 
-If headings or `raw_transcript` differ, re-ingest until they match. Do not trust
-the on-disk file as proof of ingestion.
+If headings or `raw_transcript` differ, re-ingest until they match. Don't trust the
+on-disk file as proof of ingestion.
 
-### Phase 6: Attendee enrichment
+### Phase 5: Attendee enrichment
 
 Every attendee gets enriched — this is part of ingestion, not a follow-up chore,
 because an attendee without a people page is a mention the brain can't connect.
@@ -323,7 +317,7 @@ For each attendee:
 need `$GB timeline-add` for dated events (auto-link handles links, not timeline
 entries).
 
-### Phase 7: Entity propagation
+### Phase 6: Entity propagation
 
 Every company, project, program, place, or concept discussed gets propagated —
 like attendee enrichment, this is part of ingestion. For each one:
@@ -332,16 +326,17 @@ like attendee enrichment, this is part of ingestion. For each one:
 3. Add a timeline entry referencing the meeting
 4. Back-link from the entity page to the meeting page
 
-### Phase 8: Timeline merge
+### Phase 7: Timeline merge
 
 The same event appears on every mentioned entity's timeline. If Alice met Bob at
 Acme Corp, the event goes on Alice's page, Bob's page, and Acme Corp's page.
 
-### Phase 9: Follow-up (always) — route to the follow-up method
+### Phase 8: Draft the follow-up (always) — route to the follow-up method
 
-Phases 1–8 run the same everywhere. **Every meeting gets a follow-up.** The *method*
-is chosen by **meeting type**, not brain — read and follow the matching file in
-`followups/`, and produce it as separate chat output (never inside the notes file):
+**Every meeting gets a follow-up.** The *method* is chosen by **meeting type**, not
+brain — read and follow the matching file in `followups/`. Draft it as separate chat
+output (never inside the notes file) and **leave it ready to send — do not auto-send
+it**; the user sends it from the final delivery (Phase 10).
 
 | Meeting type | Follow-up method file | Deliverable |
 |---|---|---|
@@ -352,13 +347,40 @@ Default to the **follow-up message**; use the team recap only for the buildpurdu
 team meeting. (A buildpurdue 1-on-1 gets a follow-up message, not a recap.) A new method
 later → add a `followups/<name>.md` + a row here.
 
-### Phase 10: Execution split (only if the meeting has action items)
+### Phase 9: Execution split (only if the meeting has action items)
 
 If the meeting produced **Action Items**, read and follow `execution-split.md`: split
 each into **Do now** (do it immediately) vs **Track** (add to the brain's task manager),
-**propose the split to the user, and add tasks only on their confirm** (only the user's
-own items, into the meeting's brain). Skip this phase entirely if there are no action
+execute the do-now items, and **add the user's own Track items to the meeting's brain
+task manager automatically** — no confirm gate; the user reviews the result at Phase 10
+and can re-bucket or edit then. Only the user's own items go on their list (other
+people's stay in the follow-up/recap). Skip this phase entirely if there are no action
 items. This runs independently of the follow-up.
+
+### Phase 10: Commit, push, and deliver (the one checkpoint)
+
+Everything above ran without the user. Now commit and push all the brain changes this
+ingest produced, then present a single delivery message and invite corrections.
+
+1. **Commit & push.** Stage every file this ingest touched — the meeting page, any
+   git-tracked raw sidecar, the people/entity pages created or updated, and the task
+   page if Phase 9 added tasks. Resolve the repository's push remote, commit, and push.
+2. **Deliver — one message** carrying:
+   - the ingest report: `Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items captured.`
+   - the canonical brain file path (`$BRAIN_DIR/meetings/<slug>.md`) and the clickable
+     GitHub commit link for the pushed work. Attach the actual canonical file at its
+     real in-brain path — never a temp copy, a regenerated duplicate, or an
+     inbound-media path; if the surface can't attach, quote the relevant sections and
+     give that path.
+   - the **ready-to-send** follow-up message or team recap (Phase 8) — drafted, not sent
+   - the execution-split summary (Phase 9): what was done now, and the tasks added
+     (owner, priority, due date)
+   - any uncertain attributions to confirm, and an explicit invitation to flag anything to fix
+3. **Iterate on request.** If the user flags an issue, fix it — update the canonical
+   file and re-ingest, correct attributions/links/people/companies, re-bucket or edit
+   tasks, revise the follow-up draft — then make a fresh commit, push, surface the new
+   commit link, and re-deliver. Stay in this loop until the user is satisfied.
+   (Diarization is unreliable, so expect attribution fixes here.)
 
 ## Output Format
 
@@ -378,23 +400,27 @@ section):
                                 <!-- timeline -->-marked block; stays dead last)
 ```
 
-Final report after ingestion + enrichment:
+The single delivery message (Phase 10) leads with:
 "Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items
-captured." Then produce the Phase 9 follow-up (default: follow-up message; buildpurdue
-team meeting: team recap) and, if there are action items, the Phase 10 execution split
-(propose → confirm → add) as separate chat output.
+captured." — followed by the commit link, the ready-to-send follow-up (default:
+follow-up message; buildpurdue team meeting: team recap), and the execution-split
+summary (do-now done + tasks added), then an invitation to flag fixes.
 
 ## Anti-Patterns
 
-Running the phases in order, ingesting only after the user approves the draft, and
-treating attendee enrichment + entity propagation as part of ingestion keeps you
-clear of nearly everything below. The list is a backstop — recognize these failure
-modes and steer back to the phase that prevents them:
+Running the phases in order, ingesting the whole meeting autonomously, and treating
+attendee enrichment + entity propagation as part of ingestion keeps you clear of
+nearly everything below. The list is a backstop — recognize these failure modes and
+steer back to the phase that prevents them:
 
 - Blending the phases into one blob instead of running them in order
-- Treating G-Brain ingestion as a separate, optional step after approval rather
-  than part of this flow
-- Running ingestion before the user has reviewed the notes
+- Gating the work mid-flow — stopping to ask for approval before ingesting,
+  enriching, committing, or adding tasks. Do it all, then present once at Phase 10.
+- Auto-sending the follow-up or team recap instead of leaving it ready to send for
+  the user
+- Proposing the execution split and waiting for confirmation instead of executing
+  do-now items and adding the user's own tasks, then surfacing them at Phase 10
+- Treating G-Brain ingestion as a separate, optional step rather than part of this flow
 - Skipping the executive summary or the chronological historical breakdown
 - Writing the historical breakdown as transcript sludge instead of structured
   segments with bullets
@@ -415,4 +441,5 @@ modes and steer back to the phase that prevents them:
 - Not merging timelines across all mentioned entities
 - Creating attendee stubs without meaningful content
 - Filing meeting pages without cross-linking to all participants
-- Auto-writing tasks into the brain task manager against user preference
+- Adding *other people's* action items to the user's task manager (only the user's
+  own items go on their list; other people's stay in the follow-up/recap)

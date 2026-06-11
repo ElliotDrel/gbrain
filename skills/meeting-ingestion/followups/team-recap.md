@@ -2,9 +2,10 @@
 
 Use this **only** for the buildpurdue weekly **team meeting** — a recap posted to the
 whole team (Slack). Every other meeting (including buildpurdue 1-on-1s) uses
-`follow-up-message.md`. Run only after the notes are approved + ingested (router
-`SKILL.md` Phases 1–8). Output only the recap message, ready to paste — no
-meta-commentary.
+`follow-up-message.md`. Draft this after the meeting page is ingested and enriched
+(router `SKILL.md` Phase 8). Output only the recap message, ready to paste — no
+meta-commentary. Leave it **ready to post and do not auto-send it**; the user posts it
+to the team from the final delivery (Phase 10).
 
 ## Goal & tone
 A quick, actionable summary — what was covered + clear action items with due dates.

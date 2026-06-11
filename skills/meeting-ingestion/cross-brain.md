@@ -30,8 +30,8 @@ Judge by content, not the meeting title.
 
 ## Step B — ingest the PRIMARY brain (full normal flow, primary lens)
 
-Run the complete meeting-ingestion flow (Step 0 → Phase 9) into the **primary** brain as
-normal, with two scoping rules:
+Run the complete meeting-ingestion flow (Step 0 through the final delivery) into the
+**primary** brain as normal, with two scoping rules:
 
 1. **Scope the notes to the primary brain's aspects.** Don't detail the secondary brain's
    material — reduce it to a one-line mention where needed.
@@ -40,9 +40,11 @@ normal, with two scoping rules:
    `> This page is the buildpurdue lens of the call. Personal threads are in the companion page in the personal brain (meetings/<slug>).`
 
 Pick the notes variant (standard / leadership / one-on-one) that fits the conversation —
-independent of this mode. Finish the primary completely (draft → review → ingest →
-attendee enrichment → entity propagation → Phase 9 deliverable) before touching the
-secondary.
+independent of this mode. Finish the primary completely (draft → ingest → attendee
+enrichment → entity propagation → timeline merge → follow-up draft → execution split →
+commit & push) before touching the secondary — but **hold the single delivery message
+until both brains are done** (see Delivery below). The one-checkpoint rule still applies:
+do all the work on both brains first, then present once.
 
 ## Step C — second pass: ingest the SECONDARY brain (reread from scratch)
 
@@ -56,6 +58,17 @@ framing. Then run the meeting-ingestion flow again into the **secondary** brain:
 - Use whatever notes variant fits the secondary lens (it may differ from the primary's).
 - Run its own attendee enrichment / entity propagation **within the secondary brain** (each
   brain has its own people/entity pages — never `--brain`, always the brain's own `$GB`).
+- Draft the secondary brain's follow-up + run its execution split, and commit & push the
+  secondary brain too.
+
+## Delivery — one message, after both brains
+
+Hold the single delivery (router `SKILL.md` Phase 10) until **both** brains are fully
+done. Then present once: both ingest reports, both commit links, both brains'
+ready-to-send follow-ups, and both execution-split summaries — followed by one invitation
+to flag fixes. This keeps the one-checkpoint rule intact across the cross-brain mode. If
+the user flags an issue on either brain, fix it in that brain, re-commit/push, and
+re-deliver.
 
 ## Transcript handling (deterministic, both brains)
 
