@@ -69,10 +69,10 @@ what the content *means*, where it belongs, and how it connects to what's alread
 > summary, after all persistence work is done, where you report what was ingested, surface the
 > judgment calls you made (so Elliot can re-file), and -- only if he didn't already give a
 > reason when he sent the item -- ask once, "Why did you send me this?" If he answers, add
-> `## Why I Saved This` in his exact words, repeat the persistence steps, and only then send
-> the follow-up summary. If he doesn't, the item is still fully ingested, linked, committed,
-> and pushed. The only hard stop before the end is a failed fetch (a non-zero exit can't be
-> ingested).
+> `## Why I Saved This` as a faithful, lightly normalized version of his reason, repeat the
+> persistence steps, and only then send the follow-up summary. If he doesn't, the item is still
+> fully ingested, linked, committed, and pushed. The only hard stop before the end is a failed
+> fetch (a non-zero exit can't be ingested).
 
 ## What a finished ingest looks like (the contract)
 
@@ -87,20 +87,24 @@ Every ingest produces:
 - The analyzed page written through to the engine and **verified retrievable** (for example via
   `gbrain get <slug>` or equivalent). Disk-only markdown is not done.
 - The brain repo updated, committed, and pushed. If git is dirty, the ingest is not done.
-- For an intentionally-saved social/video item: a `## Why I Saved This` section in Elliot's
-  own words **when he provides them** -- either in how he sent the item, or in answer to the
-  single question asked at the final summary. Until then it's omitted, and the page is
-  complete without it (see the hard guardrails).
+- For an intentionally-saved social/video item: a `## Why I Saved This` section grounded in
+  Elliot's stated reason **when he provides one** -- either in how he sent the item, or in
+  answer to the single question asked at the final summary. Lightly normalize for spelling,
+  grammar, and clarity, but preserve the actual meaning and direction. Until then it's omitted
+  and the page is complete without it (see the hard guardrails).
 
 <hard_guardrails>
 These four are load-bearing. The rest of this skill is normal directive guidance; these are not.
 
 1. **Never invent `## Why I Saved This`.** It is Elliot's signal and only he can give it. If
-   he gave a reason when he sent the item, use his exact words. Otherwise ingest the whole
-   item without the section and ask for it once, in the final summary ("Why did you send me
-   this?"). If he answers, add the section in his exact words and re-ingest; if he doesn't,
-   leave it out -- the page is complete either way. No placeholder, no `_Pending_`, no inferred
-   reason, ever.
+   he gave a reason when he sent the item, write a faithful version of that reason. You may
+   clean up spelling, grammar, and obvious slips, and you may add a thin layer of clarification
+   that is already strongly implied by context, but do not change the claim, intensify it, or
+   add a new motive. If his reason names a company, project, or person already in the brain,
+   cross-link it there. Otherwise ingest the whole item without the section and ask for it once,
+   in the final summary ("Why did you send me this?"). If he answers, add the section in that
+   lightly normalized form and re-ingest; if he doesn't, leave it out -- the page is complete
+   either way. No placeholder, no `_Pending_`, no invented motive, ever.
 2. **Never hand-write a social/video raw file**, and never re-run the fetch script to paper
    over a failure. ScrapeCreators bills per request and the script already retried internally.
    On failure, surface the script's exact error to Elliot and stop.
@@ -186,10 +190,15 @@ and Elliot can re-file if he disagrees.
 </concept_dedup>
 
 For an intentionally-saved social/video item, the `## Why I Saved This` section is Elliot's
-own words. If he already gave a reason in how he sent the item, capture his **exact phrasing**
-there now. Otherwise omit the section and build the rest of the page in full -- the single
-question ("Why did you send me this?") is asked once at the final summary (Output), and if he
-answers you add the section in his exact words and re-ingest (hard guardrail 1). Never infer it.
+stated reason, lightly normalized into clean prose. If he already gave a reason in how he sent
+the item, capture that reason there now while preserving the real meaning and direction. You may
+clean up typos, smooth the wording, and add a minimal amount of clarifying context that is
+already obvious from the surrounding brain state. If the reason points at an existing company,
+project, or page such as Keel, make that link explicit in the text or nearby backlinks. Otherwise
+omit the section and build the rest of the page in full -- the single question ("Why did you
+send me this?") is asked once at the final summary (Output), and if he answers you add the
+section in that lightly normalized form and re-ingest (hard guardrail 1). Never infer a new
+motivation he did not give.
 
 File by primary subject:
 - reusable mental model / framework / technique -> `concepts/<slug>.md`
@@ -220,7 +229,9 @@ tags:                 # 3-6 kebab-case; prefer existing -- see conventions/taggi
 of the concept itself.}
 
 ## Why I Saved This
-{Elliot's own words, directly under Summary. Omit entirely until he gives them.}
+{A faithful, lightly normalized version of Elliot's stated reason. Fix obvious typos and make
+the sentence clean, but do not change the underlying meaning. If he pointed at an existing
+company/project/person, make that connection explicit. Omit entirely until he gives a reason.}
 
 ## {Body sections...}
 {Key segments, history, etc. No per-line [Source: ...] tags on a single-source page --
@@ -308,11 +319,11 @@ Then, in the same message:
 - Include the concept-dedup queries you ran and the top hits, plus any judgment call you made
   (duplicate handling, merge-vs-new, a transcript-less page), so Elliot can correct or re-file.
 - **If `## Why I Saved This` is not already filled** (he didn't give a reason when he sent the
-  item), ask exactly once: **"Why did you send me this?"** If he answers, add the section in his
-  exact words, then repeat the engine-write, retrieval-check, commit, and push sequence before
-  replying again. If he doesn't, leave it out -- the item is already fully ingested, linked,
-  committed, and pushed; there's just no `Why I Saved This`. Either way the page is complete,
-  not half-done.
+  item), ask exactly once: **"Why did you send me this?"** If he answers, add the section in a
+  faithful, lightly normalized form, then repeat the engine-write, retrieval-check, commit, and
+  push sequence before replying again. If he doesn't, leave it out -- the item is already fully
+  ingested, linked, committed, and pushed; there's just no `Why I Saved This`. Either way the
+  page is complete, not half-done.
 
 ## Anti-patterns
 
@@ -320,9 +331,10 @@ Each is paired with what to do instead.
 
 - **Dumping a raw transcript without analysis** -> write key points and structure; the transcript
   lives in the raw file, not the page.
-- **Inferring or placeholding `## Why I Saved This`** -> use Elliot's exact words if he gave a
-  reason when sending; otherwise omit it and ask once at the final summary, adding it and
-  re-ingesting only if he answers (hard guardrail 1).
+- **Inferring or placeholding `## Why I Saved This`** -> use Elliot's stated reason if he gave
+  one, but lightly normalize it into clean prose instead of copying typos verbatim; otherwise
+  omit it and ask once at the final summary, adding it and re-ingesting only if he answers
+  (hard guardrail 1).
 - **Gating the work mid-flow** -- confirming before building a transcript-less page, or stopping
   on a duplicate / merge-vs-new judgment call -> make the call, ingest, and surface it in the
   final summary for Elliot to re-file. The only early stop is a failed fetch.
