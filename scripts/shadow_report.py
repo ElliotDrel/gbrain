@@ -11,8 +11,8 @@ Usage:
     python scripts/shadow_report.py [INPUT.jsonl] [-o OUTPUT.html] [--open]
 
 If INPUT is omitted, the newest shadow-compare-*.jsonl in ~/.gbrain (or
-$GBRAIN_SHADOW_DIR) is used. If -o is omitted, the HTML is written next to the
-input with a .html extension.
+$GBRAIN_SHADOW_DIR) is used. If -o is omitted, the HTML is written next to this
+script (the gbrain scripts/ dir), named after the input log.
 
 No third-party dependencies — standard library only.
 """
@@ -273,8 +273,14 @@ def build_html(records: list[dict], source: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Render gbrain shadow-comparison JSONL into HTML.")
     parser.add_argument("input", nargs="?", help="Path to shadow-compare-*.jsonl (default: newest in ~/.gbrain)")
-    parser.add_argument("-o", "--output", help="Output HTML path (default: alongside input)")
+    parser.add_argument("-o", "--output", help="Output HTML path (default: alongside this script)")
     parser.add_argument("--open", action="store_true", help="Open the HTML in a browser when done")
+    parser.add_argument(
+        "--since-minutes",
+        type=float,
+        default=None,
+        help="Only include records whose timestamp is within the last N minutes (default: all)",
+    )
     args = parser.parse_args()
 
     if args.input:
@@ -290,7 +296,34 @@ def main() -> int:
         return 1
 
     records = load_records(src)
-    out = Path(args.output) if args.output else src.with_suffix(".html")
+
+    if args.since_minutes is not None:
+        from datetime import datetime, timezone, timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=args.since_minutes)
+
+        def _within(rec: dict) -> bool:
+            raw = rec.get("timestamp")
+            if not raw:
+                return False
+            try:
+                ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            except ValueError:
+                return False
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts >= cutoff
+
+        before = len(records)
+        records = [r for r in records if _within(r)]
+        print(f"filtered to last {args.since_minutes:g} min: {len(records)}/{before} record(s)")
+
+    # Default output lands next to this script (the gbrain scripts/ dir), not next
+    # to the input log in ~/.gbrain — predictable location regardless of cwd.
+    if args.output:
+        out = Path(args.output)
+    else:
+        out = Path(__file__).resolve().parent / f"{src.stem}.html"
     out.write_text(build_html(records, src), encoding="utf-8")
     print(f"wrote {out} ({len(records)} record(s))")
 
