@@ -8,7 +8,12 @@ workspace scripts) unless they've been moved upstream into gbrain itself.
 
 No code snippets — only intent, scope, and enough pointers to rebuild quickly.
 
-Last updated: 2026-06-12 (on gbrain 0.42.40.0).
+Last updated: 2026-06-12 (on gbrain 0.42.40.0). Full drift sweep this date:
+diffed every gbrain-owned `src/` and stock-skill file against `origin/master` and
+reconciled the manifest — added A4–A7 (plain-bullet timeline convention,
+reference-entity flag, conversation body reader, ingest social-routing) which had
+real inline edits to stock files but no entry. A1–A3, B1 (active), B2 (retired)
+all re-verified present/correct.
 
 ---
 
@@ -138,6 +143,98 @@ migrate the routing-eval fixtures. NOTE: post-meeting-flow was never committed t
 any git repo and is now deleted, so its full behavior survives ONLY as what was
 folded into `meeting-ingestion` v2.0.0 (this entry + the merged SKILL.md are the
 reference) — there is no standalone copy to restore from.
+
+## A4. Plain-bullet timeline/back-link convention — 5 stock skills + `src/commands/extract.ts`
+**Change:** standardized the brain's timeline/back-link line format on a **plain
+bullet** — `- YYYY-MM-DD — Summary` — replacing upstream's bold-pipe shape
+(`- **YYYY-MM-DD** | Summary`). This is a deliberate convention choice, not a bug
+fix, so it persists.
+**Edit made (two halves that must stay in sync):**
+- **Skill templates** rewritten to emit the plain-bullet shape in their Timeline
+  and back-link examples: `enrich` (person + company templates + a new "use this
+  exact shape, the extractor parses it" callout), `idea-ingest`, `maintain`,
+  `signal-detector`, `voice-note-ingest`.
+- **`src/commands/extract.ts` `extractTimelineFromContent`** taught a **Format 3**
+  plain-bullet regex (`^-\s+(\d{4}-\d{2}-\d{2})\s*[—–-]\s*(.+)$`, line-anchored,
+  `gm`) so the extractor actually recognizes what the skills now write. Without
+  this half, every brain-authored timeline entry is invisible to extraction and
+  `timeline_coverage` sits at 0%. The Format-1 bold pattern still matches, so the
+  two never double-count (a `*` follows the bullet in Format 1, not a digit).
+**Why:** one canonical timeline format end-to-end; the skill format and the
+extractor regex are a matched pair — change one, change both.
+**How to recreate:** re-apply the plain-bullet template edits in those 5 skills
+AND re-add the Format-3 plain-bullet branch to `extractTimelineFromContent`. Stock
+`maintain` also documents `- **DATE** | …` / `### DATE — Title` as the only parsed
+formats; keep the "plain-bullet is canonical, bold-pipe is legacy" wording there.
+
+## A5. Reference-entity flag (`reference: true`) — new files + inline coverage exclusions
+**Change:** added a `reference: true` frontmatter flag (set via `gbrain reference
+<slug>`) for person/company pages the user only reads ABOUT (book authors,
+historical figures, companies discussed in an article) — they stay fully typed,
+searchable, enrichable, and linkable but are **exempt from entity coverage
+nudges** (timeline/links), which don't apply to figures with no dated history in
+the user's own life.
+**Edit made:**
+- **New files (conflict-free):** `src/core/reference-flag.ts` (`referenceExclusionSql()`
+  helper), `src/commands/reference.ts` (`gbrain reference` command),
+  `skills/conventions/reference-entities.md` (the convention).
+- **Inline edits to stock files (THESE conflict on upgrade — the real reason this
+  entry exists):**
+  - `src/cli.ts` — add `'reference'` to `CLI_ONLY` + a `case 'reference'` dispatch
+    in `handleCliOnly`.
+  - `src/core/onboard/checks.ts` — `AND ${referenceExclusionSql(...)}` in both
+    `checkEntityLinkCoverage` and `checkTimelineCoverage` (total + sample queries).
+  - `src/core/onboard/init-nudge.ts` — same exclusion in the 3 nudge count queries.
+  - `src/core/pglite-engine.ts` — exclusion in the doctor health `entity_pages` CTE.
+  - `src/core/postgres-engine.ts` — same exclusion, but **inlined as raw SQL**
+    (`(frontmatter->>'reference') IS DISTINCT FROM 'true'`) because postgres.js
+    tagged-template `${}` is a bound param, not raw SQL — cannot call the helper
+    here; keep it in sync with `referenceExclusionSql()` by hand.
+- **Skill guidance** added to `enrich`, `article-enrichment`, `book-mirror`, and
+  `maintain` (mint reference pages for read-about figures; default OFF for real
+  contacts; `maintain` notes reference pages are exempt from coverage metrics).
+**Why:** book/article imports were minting un-dated entity pages that dragged
+`link_coverage`/`timeline_coverage` toward 0% and triggered endless nudges.
+**How to recreate:** keep the 3 new files, then re-thread `referenceExclusionSql()`
+into every coverage/health query above (and the hand-inlined raw-SQL copy in
+`postgres-engine.ts`), re-wire the `reference` command in `cli.ts`, and re-add the
+4 skills' guidance. The inline SQL exclusions are what an upgrade overwrites.
+
+## A6. Conversation body reader + `speaker-letter-no-time` pattern — new file + inline swaps
+**Change:** conversation/meeting fact-extraction now reads the **`raw_transcript`
+sidecar** (the real turn-by-turn transcript) when present, instead of only
+`compiled_truth + timeline` (which on meeting pages is just the human summary), and
+added a built-in parser pattern for this workspace's `Speaker A: …` / `Speaker B: …`
+raw transcript shape.
+**Edit made:**
+- **New file (conflict-free):** `src/core/conversation-parser/body.ts`
+  (`readConversationBodyForParsing(engine, page)` — prefers `frontmatter.raw_transcript`
+  sidecar, falls back to `compiled_truth + timeline`).
+- **Inline edits to stock files (conflict on upgrade):**
+  - `src/commands/conversation-parser.ts`, `src/commands/doctor.ts`, and
+    `src/commands/extract-conversation-facts.ts` all swapped their ad-hoc
+    `compiled_truth + timeline` body concatenation for `readConversationBodyForParsing`
+    (extract-conversation-facts.ts also deleted its now-dead local `readPageBody`).
+  - `src/core/conversation-parser/builtins.ts` — added the `speaker-letter-no-time`
+    built-in pattern (`^(Speaker [A-Z0-9]+):\s*(.*)$`, `quick_reject /^Speaker /`,
+    frontmatter date source) for Fathom/phone-call raw transcripts.
+**Why:** meeting pages store the transcript in a `.raw/` sidecar and the summary in
+`compiled_truth`; reading only the latter silently dropped the actual conversation
+from fact extraction, and the plain `Speaker A:` shape had no matching pattern.
+**How to recreate:** keep `body.ts`, re-point the 3 command files at
+`readConversationBodyForParsing`, and re-add the `speaker-letter-no-time` pattern to
+`builtins.ts`. NOTE: an earlier `me-them-no-time` pattern was added then **reverted**
+(`ecd580c3`) — do NOT re-add it; only `speaker-letter-no-time` is live.
+
+## A7. MODIFIED stock skill — `skills/ingest/SKILL.md`
+**Change:** the audio/video ingest phase now routes social/video URLs through
+`media-ingest`'s integrated provider (Supadata) path **first**, so transcript +
+metadata land together in one raw provenance file before the generic
+transcript-and-analyze steps run (the remaining steps were renumbered to fit).
+**Why:** keeps social/video provenance consistent with the `media-ingest` pipeline
+instead of a parallel ad-hoc transcript fetch.
+**How to recreate:** in the audio/video section, prepend the "route social/video
+through media-ingest's Supadata path first" step and renumber the following steps.
 
 > **Conflict-free customizations (no recreate entry needed).** The `gbrain tags`
 > command (`src/commands/tags.ts` + minimal cli.ts wiring), the safe-upgrade
