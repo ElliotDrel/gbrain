@@ -7,6 +7,7 @@ const SUPADATA_BASE = 'https://api.supadata.ai/v1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const INTERNAL_ERROR_RETRY_DELAYS_MS = [5_000, 30_000, 60_000];
 const PLATFORM_ALIASES = { x: 'twitter' };
+const THREAD_READER_BASE = 'https://threadreaderapp.com/thread';
 
 async function getJson(base, apiKey, endpoint, params) {
   const u = new URL(base + endpoint);
@@ -205,20 +206,26 @@ function normalizeYouTubeMetadata(body) {
 
 function normalizeTwitterMetadata(body) {
   const legacy = body?.legacy || {};
+  const authorResult = body?.core?.user_results?.result || {};
+  const authorLegacy = authorResult?.legacy || {};
+  const authorCore = authorResult?.core || {};
   const media = legacy?.extended_entities?.media?.[0] || legacy?.entities?.media?.[0] || {};
+  const authorUsername = firstDefined(authorCore.screen_name, authorLegacy.screen_name);
+  const authorDisplayName = firstDefined(authorCore.name, authorLegacy.name, authorUsername);
+  const authorId = firstDefined(authorResult?.rest_id, authorLegacy.id_str, legacy.user_id_str);
   return {
     platform: 'x',
     id: firstDefined(body.rest_id, legacy.id_str),
-    title: titleFallback('x', legacy.user_id_str, media.type || 'post'),
+    title: titleFallback('x', authorUsername || authorDisplayName || authorId, media.type || 'post'),
     description: legacy.full_text || '',
     createdAt: isoFromTwitter(legacy.created_at),
     type: media.type || 'post',
     author: {
-      id: legacy.user_id_str || null,
-      username: null,
-      displayName: null,
-      isVerified: null,
-      url: legacy.user_id_str ? `https://x.com/i/user/${legacy.user_id_str}` : null,
+      id: authorId || null,
+      username: authorUsername || null,
+      displayName: authorDisplayName || null,
+      isVerified: firstDefined(authorResult?.is_blue_verified, authorLegacy.verified),
+      url: authorUsername ? `https://x.com/${authorUsername}` : authorId ? `https://x.com/i/user/${authorId}` : null,
     },
     media: {
       duration: null,
@@ -323,6 +330,68 @@ function normalizeTranscript(platform, body) {
   }
 }
 
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(Number(num)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function stripHtml(value) {
+  return decodeHtmlEntities(String(value || '')
+    .replace(/<sup\b[\s\S]*?<\/sup>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' '))
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function normalizeThreadReaderTranscript(html) {
+  const segments = [];
+  const regex = /<div id="tweet_(\d+)"(?:[^>"']+|"[^"]*"|'[^']*')*>([\s\S]*?)<\/div>/gi;
+  for (const match of html.matchAll(regex)) {
+    const text = stripHtml(match[2]);
+    if (!text) continue;
+    segments.push({ text, offset: null });
+  }
+  const text = segments.map((segment) => segment.text).join('\n\n').trim();
+  return { state: text ? 'ok' : 'empty', text, segments, error: null };
+}
+
+async function getThreadReaderTranscript(postId) {
+  if (!postId) return { state: 'error', text: '', segments: [], error: 'missing x post id', provider: 'threadreader', fallbackUsed: true };
+  const res = await fetch(`${THREAD_READER_BASE}/${encodeURIComponent(postId)}.html`);
+  const html = await res.text();
+  if (!res.ok) {
+    return {
+      state: 'error',
+      text: '',
+      segments: [],
+      error: `HTTP ${res.status}: ${html.slice(0, 200).trim() || 'empty body'}`,
+      provider: 'threadreader',
+      fallbackUsed: true,
+    };
+  }
+  const normalized = normalizeThreadReaderTranscript(html);
+  if (normalized.state === 'ok') {
+    return { ...normalized, provider: 'threadreader', fallbackUsed: true };
+  }
+  return {
+    state: 'error',
+    text: '',
+    segments: [],
+    error: 'Thread Reader page did not expose tweet blocks',
+    provider: 'threadreader',
+    fallbackUsed: true,
+  };
+}
+
 function supadataSegmentsOf(body) {
   if (Array.isArray(body?.content)) {
     return body.content
@@ -413,7 +482,7 @@ function routesFor(platform) {
   }
 }
 
-export { parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata };
+export { parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata, normalizeThreadReaderTranscript };
 
 export async function getMetadata(apiKeys, platform, url) {
   const routes = routesFor(platform);
@@ -423,12 +492,29 @@ export async function getMetadata(apiKeys, platform, url) {
   return res;
 }
 
-export async function getTranscript(apiKeys, platform, url, { durationSeconds = null } = {}) {
+export async function getTranscript(apiKeys, platform, url, { durationSeconds = null, postId = null } = {}) {
   const routes = routesFor(platform);
   if (!routes) return { state: 'error', text: '', segments: [], error: `unsupported platform: ${platform}`, provider: 'scrapecreators', fallbackUsed: false };
   const first = await getWithRetry(apiKeys.scrapeCreatorsApiKey, routes.transcript, { url }, 'transcript request');
   if (first.status === 200) {
-    return { ...normalizeTranscript(platform, first.body), provider: 'scrapecreators', fallbackUsed: false };
+    const normalized = normalizeTranscript(platform, first.body);
+    if (platform === 'x' && normalized.state === 'empty' && postId) {
+      const fallback = await getThreadReaderTranscript(postId);
+      if (fallback.state === 'ok') {
+        return {
+          ...fallback,
+          primaryProvider: 'scrapecreators',
+          primaryState: normalized.state,
+        };
+      }
+      return {
+        ...normalized,
+        provider: 'scrapecreators',
+        fallbackUsed: false,
+        warning: `thread fallback failed: ${fallback.error}`,
+      };
+    }
+    return { ...normalized, provider: 'scrapecreators', fallbackUsed: false };
   }
 
   const scrapeError = `HTTP ${first.status}: ${JSON.stringify(first.body)}`;

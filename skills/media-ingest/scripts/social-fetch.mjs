@@ -173,7 +173,7 @@ if (!m || !t) {
   }
   m = meta.body;
   const durationSeconds = m.media?.duration ?? m.duration ?? null;
-  t = await getTranscript(apiKeys, platform, fetchUrl, { durationSeconds });
+  t = await getTranscript(apiKeys, platform, fetchUrl, { durationSeconds, postId: canon?.id || null });
 }
 
 // File/dedup key = the deterministic, URL-derived canonical id (the post's

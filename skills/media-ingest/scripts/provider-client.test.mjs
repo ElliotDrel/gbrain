@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getTranscript, parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata } from './provider-client.mjs';
+import { getTranscript, parseWebVtt, normalizeMetadata, normalizeTranscript, shouldFallbackToSupadata, normalizeThreadReaderTranscript } from './provider-client.mjs';
 
 test('parseWebVtt preserves timestamp offsets and text', () => {
   const segments = parseWebVtt(`WEBVTT
@@ -83,6 +83,58 @@ test('normalizeTranscript maps instagram transcript arrays without timestamps', 
   assert.match(normalized.text, /Second slide/);
 });
 
+test('normalizeMetadata maps x author info from nested user_results', () => {
+  const normalized = normalizeMetadata('x', {
+    rest_id: '2065217179101147279',
+    legacy: {
+      id_str: '2065217179101147279',
+      full_text: 'The opener tweet',
+      created_at: 'Thu Jun 11 15:04:19 +0000 2026',
+      favorite_count: 12,
+      reply_count: 3,
+      retweet_count: 4,
+      user_id_str: '1337',
+    },
+    core: {
+      user_results: {
+        result: {
+          rest_id: '1337',
+          is_blue_verified: true,
+          core: {
+            name: 'Nicolas Dessaigne',
+            screen_name: 'dessaigne',
+          },
+        },
+      },
+    },
+  });
+
+  assert.equal(normalized.author.id, '1337');
+  assert.equal(normalized.author.username, 'dessaigne');
+  assert.equal(normalized.author.displayName, 'Nicolas Dessaigne');
+  assert.equal(normalized.author.isVerified, true);
+  assert.equal(normalized.author.url, 'https://x.com/dessaigne');
+});
+
+test('normalizeThreadReaderTranscript extracts the full ordered x thread', () => {
+  const normalized = normalizeThreadReaderTranscript(`
+    <div id="tweet_1" class="content-tweet allow-preview" data-action="click->thread#showTweet" dir="auto">
+      First point.
+      <sup class="tw-permalink"><i class="fas fa-link"></i></sup>
+    </div>
+    <div id="tweet_2" class="content-tweet allow-preview" data-action="click->thread#showTweet" dir="auto">
+      Second point &amp; payoff.
+      <sup class="tw-permalink"><i class="fas fa-link"></i></sup>
+    </div>
+  `);
+
+  assert.equal(normalized.state, 'ok');
+  assert.equal(normalized.segments.length, 2);
+  assert.equal(normalized.segments[0].text, 'First point.');
+  assert.equal(normalized.segments[1].text, 'Second point & payoff.');
+  assert.match(normalized.text, /First point\.\n\nSecond point & payoff\./);
+});
+
 test('shouldFallbackToSupadata only triggers for long failed videos when a key exists', () => {
   assert.equal(shouldFallbackToSupadata({
     durationSeconds: 147,
@@ -146,6 +198,55 @@ test('getTranscript falls back to Supadata only after ScrapeCreators fails on a 
     assert.equal(calls.length, 2);
     assert.match(calls[0], /api\.scrapecreators\.com/);
     assert.match(calls[1], /api\.supadata\.ai/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('getTranscript falls back to Thread Reader for x threads when provider transcript is empty', async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).startsWith('https://api.scrapecreators.com/')) {
+      return new Response(JSON.stringify({ success: true, transcript: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (String(url).startsWith('https://threadreaderapp.com/thread/2065217179101147279.html')) {
+      return new Response(`
+        <div id="tweet_1" class="content-tweet allow-preview" dir="auto">
+          First tweet.
+          <sup class="tw-permalink"><i class="fas fa-link"></i></sup>
+        </div>
+        <div id="tweet_2" class="content-tweet allow-preview" dir="auto">
+          Second tweet.
+          <sup class="tw-permalink"><i class="fas fa-link"></i></sup>
+        </div>
+      `, {
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+    throw new Error(`unexpected url: ${url}`);
+  };
+
+  try {
+    const result = await getTranscript(
+      { scrapeCreatorsApiKey: 'scrape', supadataApiKey: null },
+      'x',
+      'https://x.com/dessaigne/status/2065217179101147279',
+      { postId: '2065217179101147279' },
+    );
+
+    assert.equal(result.provider, 'threadreader');
+    assert.equal(result.fallbackUsed, true);
+    assert.equal(result.state, 'ok');
+    assert.match(result.text, /First tweet\.\n\nSecond tweet\./);
+    assert.equal(calls.length, 2);
+    assert.match(calls[0], /api\.scrapecreators\.com/);
+    assert.match(calls[1], /threadreaderapp\.com/);
   } finally {
     global.fetch = originalFetch;
   }
