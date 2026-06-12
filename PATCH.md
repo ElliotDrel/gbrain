@@ -8,7 +8,7 @@ workspace scripts) unless they've been moved upstream into gbrain itself.
 
 No code snippets — only intent, scope, and enough pointers to rebuild quickly.
 
-Last updated: 2026-06-04 (on gbrain 0.42.24.0).
+Last updated: 2026-06-12 (on gbrain 0.42.40.0).
 
 ---
 
@@ -152,7 +152,7 @@ reference) — there is no standalone copy to restore from.
 ═══════════════════════════════════════════════════════════════════════
 
 ## B1. MODIFIED gbrain source — `src/core/ai/gateway.ts` (`instantiateEmbedding` openai-compatible branch)
-**Status: ACTIVE** (as of 0.42.24.0 — upstream has NOT fixed this half).
+**Status: ACTIVE** (audited again on 0.42.40.0 — upstream still has NOT fixed this half).
 **Upstream:** same issue family as garrytan/gbrain#1762. Upstream merged the
 *cli.ts drain* half (see B2) as v0.42.20.0, but did **not** add any per-request
 timeout to the embed path. This half is still ours alone.
@@ -160,7 +160,7 @@ timeout to the embed path. This half is still ours alone.
 fetch. Check: `git show origin/master:src/core/ai/gateway.ts | grep -E
 "withEmbedFetchTimeout|AbortSignal.timeout.*EMBED|EMBED_FETCH_TIMEOUT"`. If a
 per-embed-request timeout appears upstream → retire this entry, drop our patch.
-(2026-06-04: 0 matches upstream → KEEP.)
+(2026-06-12: still 0 matches upstream for those timeout markers in `origin/master` → KEEP.)
 **Change:** added a per-request wall-clock timeout to every embedding HTTP
 request on the `openai-compatible` recipe path (ZeroEntropy / Voyage / generic),
 which this brain uses (`zeroentropyai:zembed-1`).
