@@ -8,15 +8,17 @@
  * into an HTML viewer so you can eyeball which output you prefer.
  *
  * Tier-aware pairing — the alternatives are chosen by which Anthropic tier
- * the real call used, so a Sonnet-tier call and a Haiku-tier call can shadow
- * to different models:
+ * the real call used, so Sonnet-, Haiku-, and Opus-tier calls can shadow to
+ * different model sets:
  *
- *   GBRAIN_SHADOW_SONNET   comma-separated models to run instead of Sonnet/Opus
+ *   GBRAIN_SHADOW_SONNET   comma-separated models to run instead of Sonnet
  *   GBRAIN_SHADOW_HAIKU    comma-separated models to run instead of Haiku
+ *   GBRAIN_SHADOW_OPUS     comma-separated models to run instead of Opus
  *
  * Examples:
  *   GBRAIN_SHADOW_SONNET=openai:gpt-4o,openai:gpt-4.1
  *   GBRAIN_SHADOW_HAIKU=openai:gpt-4o-mini,google:gemini-2.0-flash
+ *   GBRAIN_SHADOW_OPUS=openai:gpt-5.4,openai:gpt-4.1
  *
  * Either var may be omitted independently. If neither matches the real call's
  * tier, shadow mode is a no-op (zero added latency, zero added cost).
@@ -32,7 +34,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ChatOpts, ChatResult, ChatMessage, ChatBlock } from './gateway.ts';
 
-export type ShadowTier = 'sonnet' | 'haiku';
+export type ShadowTier = 'sonnet' | 'haiku' | 'opus';
 
 export interface ShadowOutcome {
   model: string;
@@ -43,7 +45,7 @@ export interface ShadowOutcome {
 }
 
 /** One serialized answer (real or shadow) in the JSON log. */
-interface ShadowAnswerRecord {
+export interface ShadowAnswerRecord {
   role: 'anthropic' | 'shadow';
   model: string;
   text: string | null;
@@ -70,14 +72,15 @@ interface ShadowRecord {
 
 /**
  * Classify the real model string into a shadow tier. gbrain's defaults are
- * `anthropic:claude-sonnet-4-6` and `anthropic:claude-haiku-4-5-20251001`,
- * so a simple substring match on the resolved id is robust. Opus maps to the
- * Sonnet (high-capability) bucket since that's the closest swap intent.
+ * `anthropic:claude-sonnet-4-6`, `anthropic:claude-haiku-4-5-20251001`, and
+ * `anthropic:claude-opus-4-7`, so a simple substring match on the resolved id
+ * is robust.
  */
 export function classifyShadowTier(realModelStr: string): ShadowTier | null {
   const m = realModelStr.toLowerCase();
   if (m.includes('haiku')) return 'haiku';
-  if (m.includes('sonnet') || m.includes('opus')) return 'sonnet';
+  if (m.includes('sonnet')) return 'sonnet';
+  if (m.includes('opus')) return 'opus';
   return null;
 }
 
@@ -98,12 +101,17 @@ export function getShadowModels(realModelStr: string): string[] {
   const tier = classifyShadowTier(realModelStr);
   if (tier === 'sonnet') return parseModelList(process.env.GBRAIN_SHADOW_SONNET);
   if (tier === 'haiku') return parseModelList(process.env.GBRAIN_SHADOW_HAIKU);
+  if (tier === 'opus') return parseModelList(process.env.GBRAIN_SHADOW_OPUS);
   return [];
 }
 
 /** Whether any shadow var is set at all (cheap gate before tier work). */
 export function shadowEnabled(): boolean {
-  return !!(process.env.GBRAIN_SHADOW_SONNET || process.env.GBRAIN_SHADOW_HAIKU);
+  return !!(
+    process.env.GBRAIN_SHADOW_SONNET ||
+    process.env.GBRAIN_SHADOW_HAIKU ||
+    process.env.GBRAIN_SHADOW_OPUS
+  );
 }
 
 function shadowDir(): string {
@@ -128,6 +136,24 @@ function flattenContent(content: string | ChatBlock[]): string {
     .join('\n');
 }
 
+export function makeShadowAnswerRecord(args: {
+  role: ShadowAnswerRecord['role'];
+  model: string;
+  text: string | null;
+  error?: string | null;
+  usage?: ShadowAnswerRecord['usage'];
+  stop_reason?: string | null;
+}): ShadowAnswerRecord {
+  return {
+    role: args.role,
+    model: args.model,
+    text: args.text,
+    error: args.error ?? null,
+    usage: args.usage ?? null,
+    stop_reason: args.stop_reason ?? null,
+  };
+}
+
 function answerFromResult(role: ShadowAnswerRecord['role'], model: string, r: ChatResult): ShadowAnswerRecord {
   return {
     role,
@@ -137,6 +163,32 @@ function answerFromResult(role: ShadowAnswerRecord['role'], model: string, r: Ch
     usage: { input_tokens: r.usage.input_tokens, output_tokens: r.usage.output_tokens },
     stop_reason: r.stopReason,
   };
+}
+
+export function writeShadowRecord(args: {
+  requestedModel: string;
+  tier: ShadowTier;
+  prompt: {
+    system: string | null;
+    messages: Array<{ role: string; content: string }>;
+  };
+  anthropic: ShadowAnswerRecord;
+  shadows: ShadowAnswerRecord[];
+  now: Date;
+}): void {
+  const record: ShadowRecord = {
+    timestamp: args.now.toISOString(),
+    requested_model: args.requestedModel,
+    tier: args.tier,
+    prompt: args.prompt,
+    anthropic: args.anthropic,
+    shadows: args.shadows,
+  };
+
+  const dir = shadowDir();
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `shadow-compare-${todayStamp(args.now)}.jsonl`);
+  appendFileSync(file, JSON.stringify(record) + '\n', 'utf8');
 }
 
 /**
@@ -154,9 +206,8 @@ export function writeShadowComparison(args: {
 }): void {
   const { opts, requestedModel, tier, real, shadows, now } = args;
 
-  const record: ShadowRecord = {
-    timestamp: now.toISOString(),
-    requested_model: requestedModel,
+  writeShadowRecord({
+    requestedModel,
     tier,
     prompt: {
       system: opts.system ?? null,
@@ -165,20 +216,14 @@ export function writeShadowComparison(args: {
     anthropic: answerFromResult('anthropic', real.model, real),
     shadows: shadows.map((s) =>
       s.error || !s.result
-        ? {
-            role: 'shadow' as const,
+        ? makeShadowAnswerRecord({
+            role: 'shadow',
             model: s.model,
             text: null,
             error: s.error ?? 'unknown error',
-            usage: null,
-            stop_reason: null,
-          }
+          })
         : answerFromResult('shadow', s.model, s.result),
     ),
-  };
-
-  const dir = shadowDir();
-  mkdirSync(dir, { recursive: true });
-  const file = join(dir, `shadow-compare-${todayStamp(now)}.jsonl`);
-  appendFileSync(file, JSON.stringify(record) + '\n', 'utf8');
+    now,
+  });
 }

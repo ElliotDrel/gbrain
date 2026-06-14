@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync, statSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import { homedir } from 'os';
 import type { EngineConfig, EmbeddingColumnConfig } from './types.ts';
@@ -24,6 +24,10 @@ export type DbUrlSource =
 // GBRAIN_HOME is honored uniformly. Lazy: never call homedir() at module scope.
 function getConfigDir() { return configDir(); }
 function getConfigPath() { return configPath(); }
+
+let _keysEnvCache:
+  | { path: string; mtimeMs: number; values: Record<string, string> }
+  | null = null;
 
 export interface GBrainConfig {
   engine: 'postgres' | 'pglite';
@@ -1039,6 +1043,74 @@ export function configDir(): string {
 
 export function configPath(): string {
   return join(configDir(), 'config.json');
+}
+
+export function keysEnvPath(): string {
+  return join(configDir(), 'keys.env');
+}
+
+function stripOptionalQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === '"' && last === '"') || (first === '\'' && last === '\'')) {
+      return trimmed.slice(1, -1);
+    }
+  }
+  return trimmed;
+}
+
+function parseKeysEnv(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const body = trimmed.startsWith('export ') ? trimmed.slice(7).trim() : trimmed;
+    const eq = body.indexOf('=');
+    if (eq <= 0) continue;
+    const key = body.slice(0, eq).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    const value = stripOptionalQuotes(body.slice(eq + 1));
+    out[key] = value;
+  }
+  return out;
+}
+
+function readKeysEnvValues(): Record<string, string> {
+  const path = keysEnvPath();
+  try {
+    const st = statSync(path);
+    if (_keysEnvCache && _keysEnvCache.path === path && _keysEnvCache.mtimeMs === st.mtimeMs) {
+      return _keysEnvCache.values;
+    }
+    const values = parseKeysEnv(readFileSync(path, 'utf-8'));
+    _keysEnvCache = { path, mtimeMs: st.mtimeMs, values };
+    return values;
+  } catch {
+    _keysEnvCache = null;
+    return {};
+  }
+}
+
+/**
+ * Best-effort file-plane env hydration from `~/.gbrain/keys.env`.
+ *
+ * Precedence:
+ *   1. Real process env wins (already exported in the shell / service env)
+ *   2. keys.env fills only missing vars
+ *
+ * This gives operators a single secrets file for API keys + shadow-model env
+ * knobs without requiring every caller to `source ~/.gbrain/keys.env`
+ * manually before invoking `gbrain`.
+ */
+export function hydrateProcessEnvFromKeysFile(): void {
+  const fileValues = readKeysEnvValues();
+  for (const [key, value] of Object.entries(fileValues)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
 }
 
 /**

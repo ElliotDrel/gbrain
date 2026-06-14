@@ -19,7 +19,7 @@ import {
   resolveSelfUpgradeMode,
   justUpgradedPath,
 } from './core/self-upgrade.ts';
-import { loadConfig, loadConfigFileOnly, loadConfigWithEngine, toEngineConfig, isThinClient } from './core/config.ts';
+import { loadConfig, loadConfigFileOnly, loadConfigWithEngine, toEngineConfig, isThinClient, hydrateProcessEnvFromKeysFile } from './core/config.ts';
 import type { GBrainConfig } from './core/config.ts';
 import type { AIGatewayConfig } from './core/ai/types.ts';
 import type { BrainEngine } from './core/engine.ts';
@@ -33,6 +33,11 @@ import type { CliOptions } from './core/cli-options.ts';
 import { callRemoteTool, RemoteMcpError, unpackToolResult } from './core/mcp-client.ts';
 import { maybePromptForUpgrade } from './core/thin-client-upgrade-prompt.ts';
 import { VERSION } from './version.ts';
+
+// Best-effort secrets hydration from ~/.gbrain/keys.env. Explicit process env
+// still wins; the file only fills gaps. Run once on CLI boot so the whole
+// runtime sees the same env surface, including shadow-model fan-out vars.
+hydrateProcessEnvFromKeysFile();
 
 // Build CLI name -> operation lookup
 const cliOps = new Map<string, Operation>();

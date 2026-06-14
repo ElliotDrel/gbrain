@@ -199,6 +199,7 @@ def build_html(records: list[dict], source: Path) -> str:
   }}
   .tier-sonnet {{ background: rgba(46,160,67,.18); color: #6fd585; }}
   .tier-haiku {{ background: rgba(68,147,248,.18); color: #79b8ff; }}
+  .tier-opus {{ background: rgba(210,153,34,.18); color: #f2cc60; }}
   .record-body {{ padding: 16px; }}
   .prompt-wrap {{ margin-bottom: 16px; }}
   .prompt-wrap summary {{
