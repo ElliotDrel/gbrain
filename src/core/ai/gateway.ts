@@ -1212,25 +1212,6 @@ async function resolveEmbeddingProvider(modelStr: string): Promise<{ model: any;
  * pins the single-writer lock until an external SIGKILL (garrytan/gbrain#1762).
  * 60s is generous vs. observed 2–7s latencies while still bounding lock-hold.
  */
-const EMBED_FETCH_TIMEOUT_MS = 60_000;
-
-/**
- * Wrap a fetch implementation so every embedding request carries a wall-clock
- * timeout. Composes with (never clobbers) any caller/SDK-supplied AbortSignal
- * — e.g. the `abortSignal` threaded from a wall-clock budget — so the request
- * is cancelled by whichever fires first.
- */
-function withEmbedFetchTimeout(inner?: typeof fetch): typeof fetch {
-  const base = inner ?? fetch;
-  return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const timeout = AbortSignal.timeout(EMBED_FETCH_TIMEOUT_MS);
-    const signal = init?.signal
-      ? AbortSignal.any([init.signal, timeout])
-      : timeout;
-    return base(input, { ...(init ?? {}), signal });
-  }) as unknown as typeof fetch;
-}
-
 function instantiateEmbedding(recipe: Recipe, modelId: string, cfg: AIGatewayConfig): any {
   switch (recipe.implementation) {
     case 'native-openai': {
@@ -1276,20 +1257,17 @@ function instantiateEmbedding(recipe: Recipe, modelId: string, cfg: AIGatewayCon
       // asymmetric models there too (#1400) — a strict pass-through when no
       // input_type was threaded, so symmetric deployments see zero wire
       // change.
-      const innerFetch =
+      const fetchWrapper =
         compat.fetch ??
         (recipe.id === 'voyage'
           ? voyageCompatFetch
           : recipe.id === 'zeroentropyai'
           ? zeroEntropyCompatFetch
           : openAICompatAsymmetricFetch);
-      // Always wrap so the embed request can never hang forever, regardless of
-      // recipe (a missing per-request timeout was the root cause of #1762).
-      const fetchWrapper = withEmbedFetchTimeout(innerFetch);
       const client = createOpenAICompatible({
         name: recipe.id,
         baseURL: compat.baseURL,
-        fetch: fetchWrapper,
+        ...(fetchWrapper ? { fetch: fetchWrapper } : {}),
         ...auth,
       });
       return client.textEmbeddingModel(modelId);

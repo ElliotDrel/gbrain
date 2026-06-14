@@ -249,15 +249,24 @@ through media-ingest's Supadata path first" step and renumber the following step
 ═══════════════════════════════════════════════════════════════════════
 
 ## B1. MODIFIED gbrain source — `src/core/ai/gateway.ts` (`instantiateEmbedding` openai-compatible branch)
-**Status: ACTIVE** (audited again on 0.42.40.0 — upstream still has NOT fixed this half).
+**Status: RETIRED 2026-06-14 — upstream shipped the equivalent embed timeout. DO NOT re-apply.**
 **Upstream:** same issue family as garrytan/gbrain#1762. Upstream merged the
-*cli.ts drain* half (see B2) as v0.42.20.0, but did **not** add any per-request
-timeout to the embed path. This half is still ours alone.
-**Drop-when:** upstream adds a wall-clock timeout to the openai-compatible embed
-fetch. Check: `git show origin/master:src/core/ai/gateway.ts | grep -E
-"withEmbedFetchTimeout|AbortSignal.timeout.*EMBED|EMBED_FETCH_TIMEOUT"`. If a
-per-embed-request timeout appears upstream → retire this entry, drop our patch.
-(2026-06-12: still 0 matches upstream for those timeout markers in `origin/master` → KEEP.)
+*cli.ts drain* half (see B2) as v0.42.20.0, and as of **v0.42.42.0** (the merge that
+"incorporates + hardens PR #1763, @ElliotDrel") it now also bounds the embed path:
+`gateway.ts` defines `AI_EMBED_TIMEOUT_MS` (60s, env `GBRAIN_AI_EMBED_TIMEOUT_MS`)
+and `withDefaultTimeout(caller, ms)` (AbortSignal.timeout composed with the caller
+signal via the SDK), applied at the per-sub-batch embed call
+(`abortSignal: withDefaultTimeout(opts?.abortSignal, AI_EMBED_TIMEOUT_MS)`). That is
+a superset of our fetch-level wrapper — same 60s wall-clock bound, threaded through
+the AI SDK abortSignal instead of wrapping `fetch`.
+**Drop-when:** SATISFIED — upstream adds a wall-clock timeout to the embed path.
+Verify: `git show origin/master:src/core/ai/gateway.ts | grep -E
+"AI_EMBED_TIMEOUT_MS|withDefaultTimeout"`. On the 2026-06-14 upgrade to 0.42.42.0
+the `withEmbedFetchTimeout` wrapper (function def + the one `openai-compatible`
+call-site wrap) was REMOVED and the embed instantiation block reverted to match
+upstream byte-for-byte (incl. the `...(fetchWrapper ? { fetch: fetchWrapper } : {})`
+spread). Re-applying our wrapper would just double-bound the same request.
+(History below kept for reference only.)
 **Change:** added a per-request wall-clock timeout to every embedding HTTP
 request on the `openai-compatible` recipe path (ZeroEntropy / Voyage / generic),
 which this brain uses (`zeroentropyai:zembed-1`).
@@ -319,3 +328,24 @@ force-exit kept as defense-in-depth.
 **Why retired:** upstream's `drainAllBackgroundWorkForCliExit()` is the same
 causal fix, generalized and authoritative. Two drains = conflicting solutions to
 one problem; trust upstream's.
+
+## B3. MODIFIED gbrain source — `src/commands/doctor.ts` + `src/core/onboard/checks.ts` (onboard-check pool deadlock)
+**Status: ACTIVE** (added 2026-06-13, commit `7c734c4d`; upstream has NOT fixed — verified on 0.42.42.0).
+**Upstream:** none. `garrytan/gbrain` runs PGLite (no connection pool), so the
+deadlock is invisible there; this only bites a remote pooled engine (Postgres/
+Supabase) with a small pool, which is THIS brain's config (`GBRAIN_POOL_SIZE=2`).
+**Drop-when:** upstream runs onboard checks sequentially (or pool-aware) AND bounds
+the doctor call with a timeout. Check: `git show origin/master:src/core/onboard/checks.ts
+| grep -nE "for .*await|sequential|POOL"` and `git show origin/master:src/commands/doctor.ts
+| grep -n "runAllOnboardChecks"` — if the `Promise.all` fan-out is gone / bounded
+upstream → retire. (2026-06-14: upstream still fans out via `Promise.all`, no timeout → KEEP.)
+**Change:** `runAllOnboardChecks` ran its 7 checks via `Promise.all`; each acquires
+>=1 DB connection, so on a small remote pool the concurrent acquisitions exhaust the
+pool and deadlock indefinitely (>22min observed). doctor also called it without the
+AbortSignal timeout its own doc comment requires.
+**Edit made:** run the onboard checks **sequentially** (so in-flight connections fit
+any pool size) + bound the doctor call with a **30s** defensive timeout in `doctor.ts`,
+falling through with a warn instead of hanging. Full doctor now ~10s at pool=2.
+**Why:** a single small-pool remote engine must not be able to wedge `gbrain doctor`.
+**How to recreate:** make `runAllOnboardChecks` iterate `for ... await` instead of
+`Promise.all`, and wrap its call in `doctor.ts` with a 30s `AbortSignal.timeout`.
