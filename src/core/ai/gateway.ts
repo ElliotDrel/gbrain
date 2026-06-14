@@ -2216,8 +2216,8 @@ export async function expand(query: string): Promise<string[]> {
         text: JSON.stringify(shadowResult.object ?? null),
         usage: shadowResult.usage
           ? {
-              input_tokens: shadowResult.usage.inputTokens,
-              output_tokens: shadowResult.usage.outputTokens,
+              input_tokens: shadowResult.usage.inputTokens ?? 0,
+              output_tokens: shadowResult.usage.outputTokens ?? 0,
             }
           : null,
         stop_reason: (shadowResult as any).finishReason ?? null,
@@ -2259,8 +2259,8 @@ export async function expand(query: string): Promise<string[]> {
               text: JSON.stringify(result.object ?? null),
               usage: result.usage
                 ? {
-                    input_tokens: result.usage.inputTokens,
-                    output_tokens: result.usage.outputTokens,
+                    input_tokens: result.usage.inputTokens ?? 0,
+                    output_tokens: result.usage.outputTokens ?? 0,
                   }
                 : null,
               stop_reason: (result as any).finishReason ?? null,
@@ -2342,8 +2342,8 @@ export async function generateOcrText(imageBytes: Buffer, mime: string): Promise
         model: shadowModel,
         text: shadowResult.text ?? '',
         usage: {
-          input_tokens: shadowResult.usage.inputTokens,
-          output_tokens: shadowResult.usage.outputTokens,
+          input_tokens: shadowResult.usage.inputTokens ?? 0,
+          output_tokens: shadowResult.usage.outputTokens ?? 0,
         },
         stop_reason: shadowResult.finishReason ?? null,
       });
@@ -2397,8 +2397,8 @@ export async function generateOcrText(imageBytes: Buffer, mime: string): Promise
             model: expansionModelStr,
             text: result.text ?? '',
             usage: {
-              input_tokens: result.usage.inputTokens,
-              output_tokens: result.usage.outputTokens,
+              input_tokens: result.usage.inputTokens ?? 0,
+              output_tokens: result.usage.outputTokens ?? 0,
             },
             stop_reason: result.finishReason ?? null,
           }),
