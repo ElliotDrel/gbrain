@@ -410,3 +410,37 @@ mangled into a DB-only orphan.
 `people/elliot-drel` (the owner had no self-page), `people/harsh-vyas`, `people/nishant-nair`
 (both were dangling backlinks from their meeting notes), then re-ran `--facts-backfill`.
 Result: 62 facts, **0 orphan entity_slugs** (every fact resolves to a real page).
+
+## B6. MODIFIED gbrain source — `src/commands/import.ts` (`isCollectibleForWalker` skips metafiles)
+**Status: ACTIVE** (added 2026-06-15; upstream has NOT fixed).
+**Upstream:** none observed. `sync` filters files through `isSyncable` → `SYNC_SKIP_FILES`
+(`schema.md`, `index.md`, `log.md`, `README.md`), but the bulk-import walker
+(`collectSyncableFiles` → `isCollectibleForWalker`) filtered ONLY by extension
+(`isMarkdownFilePath`). So `gbrain import <dir>` — and any directory-restore reconciliation
+pass — imports every metafile as a page that incremental sync would never index.
+**How it bit us (root cause of the "readme ghost pages"):** the 2026-06-13 PGLite→Supabase
+migration row-copied the 167 real pages, then ran a directory-import over `/home/supe/brain`
+to backfill anything missing. The only files "missing" were the 22 metafiles (19 directory
+`README.md` + `index.md` + `log.md` + `schema.md`) — because `sync` had always skipped them,
+they were never in PGLite. The import created all 22 as pages, titled by their folder
+("People", "Companies", …). Those index-titled pages then **trigram-corrupt fuzzy entity
+resolution**: any `people/X` slug fuzzy-matches the "People" page (this is how Jon Clem's fact
+mis-resolved onto `people/readme` — see B5 cleanup). `ingest_log` proof: one row at
+`2026-06-13T17:22:54Z`, `source_type=directory`, `source_ref=/home/supe/brain`,
+`summary="Imported 22 pages, 155 skipped, 22 chunks"`, `pages_updated` = exactly those 22.
+**Drop-when:** upstream funnels the import walker through `isSyncable` / applies
+`SYNC_SKIP_FILES`. Check:
+`git show origin/master:src/commands/import.ts | grep -n "SYNC_SKIP_FILES\|isSyncable"` — if
+`isCollectibleForWalker` (or its replacement) excludes the metafile basenames → retire.
+**Change:** import `SYNC_SKIP_FILES` from `core/sync.ts`; at the top of
+`isCollectibleForWalker`, reject any path whose basename is in `SYNC_SKIP_FILES` before the
+strategy switch. Single chokepoint for both the git-fast-path and the FS-walk, so import and
+sync now agree on what is a page.
+**Why:** bulk import and incremental sync must share one definition of "is this a page,"
+or a first-import/migration silently seeds metafile ghosts that poison resolution.
+**How to recreate:** add `SYNC_SKIP_FILES` to the `core/sync.ts` import; add the basename
+guard in `isCollectibleForWalker`. Tests: `test/import-metafile-skip.test.ts` (FS-walk +
+git-fast-path both exclude README/index/log/schema, keep real pages).
+**Companion data cleanup (not code):** soft-deleted all 22 metafile ghost pages from the live
+Supabase engine via `gbrain delete` (recoverable). Verified 0 facts / 0 inbound / 0 outbound
+links on them first; 208 live pages remain, 0 metafile ghosts.
