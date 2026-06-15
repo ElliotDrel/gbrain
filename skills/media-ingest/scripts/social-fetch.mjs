@@ -26,7 +26,8 @@
 //
 // Usage:  node social-fetch.mjs <url> [--brain <dir>] [--force] [--api-key-stdin]
 // Output: prints the written (or already-existing) file path as the last stdout line.
-// Exit:   0 ok / already-ingested · 1 usage · 2 no api key · 3 metadata error · 4 transcript error
+// Exit:   0 ok / already-ingested · 1 usage · 2 no api key · 3 metadata error ·
+//         4 transcript error · 5 X article — body gated, ask user for transcript
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -172,6 +173,18 @@ if (!m || !t) {
     process.exit(3);
   }
   m = meta.body;
+  // X ARTICLES: the tweet endpoint only returns a teaser card — the editorial
+  // article body is a separate, gated object no provider endpoint exposes in
+  // full (ScrapeCreators has no article route; the direct article URL is 402/
+  // gated). Note Tweets are fine (their full body is recovered in the
+  // normalizer); only true Articles hit this. Stop here and tell the operator
+  // to ask Elliot to paste the article text — do NOT ship a teaser-only page.
+  if (platform === 'x' && m.articleDetected) {
+    console.error('[social-fetch] X LONG-FORM ARTICLE DETECTED — the provider tweet endpoint returns only the teaser card; the article body cannot be auto-extracted.');
+    console.error('[social-fetch] ASK ELLIOT to paste the full article text, then ingest manually from that. Do NOT build a page from the teaser alone.');
+    console.error(SURFACE);
+    process.exit(5);
+  }
   const durationSeconds = m.media?.duration ?? m.duration ?? null;
   t = await getTranscript(apiKeys, platform, fetchUrl, { durationSeconds, postId: canon?.id || null });
 }

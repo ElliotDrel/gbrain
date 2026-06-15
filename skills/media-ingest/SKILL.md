@@ -148,10 +148,11 @@ exit code and the stderr message:
 | Exit `0`, `ALREADY INGESTED` | Do **not** re-file. This is the (immediate) final message: tell Elliot it's already ingested, cite the printed path / its concept page, and ask what he'd like changed. |
 | Exit `0`, transcript `empty` (no captions/audio) | Build a transcript-less page autonomously from the description + metadata. Don't stop to confirm -- note in the final summary that there was no transcript. |
 | `⚠ POSSIBLE DUPLICATE CONTENT` (same clip cross-posted / a trimmed cut) | Make the call yourself: **default to adding this URL as an extra source on the existing concept page** ("Also posted on..."); file a separate page only when the content is clearly distinct. Note the decision (and the script's comparison) in the final summary so Elliot can re-file if he disagrees. |
+| Exit `5`, `X LONG-FORM ARTICLE DETECTED` | **Stop and ask Elliot to paste the full article text.** X *Articles* (the titled editorial essays) are only a teaser card on the tweet endpoint -- the body is a separate, gated object no provider route exposes, and the direct article URL is 402/gated. Do **not** build a page from the teaser. Once Elliot pastes the text, ingest it manually (treat his paste as the transcript) and persist via the normal Phase 2-5 flow. NOTE: ordinary long *Note Tweets* (>280 chars) are **not** affected -- their full body is recovered automatically, so they ingest normally. |
 | Any non-zero exit, or a `>>> SURFACE THIS TO THE USER` line | **Stop.** Relay the exact HTTP status + body the script printed. Do not re-run, do not hand-write the raw. (A failed fetch can't be ingested -- this is the one place you stop early.) |
 
 Exit codes, for reference: `0` ok / already-ingested - `1` usage - `2` no API key -
-`3` metadata error - `4` transcript error.
+`3` metadata error - `4` transcript error - `5` X article (body gated; ask user for the transcript).
 </social_fetch>
 
 ## Phase 2 -- Preserve the raw source

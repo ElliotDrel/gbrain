@@ -116,6 +116,31 @@ test('normalizeMetadata maps x author info from nested user_results', () => {
   assert.equal(normalized.author.url, 'https://x.com/dessaigne');
 });
 
+test('normalizeMetadata recovers full note-tweet body over the truncated legacy.full_text', () => {
+  const normalized = normalizeMetadata('x', {
+    rest_id: '99',
+    legacy: { id_str: '99', full_text: 'This is the teaser that gets cut o…' },
+    note_tweet: {
+      note_tweet_results: {
+        result: { text: 'This is the teaser that gets cut off, but the note tweet carries the complete long-form body in full.' },
+      },
+    },
+  });
+  assert.match(normalized.description, /complete long-form body in full\.$/);
+  assert.equal(normalized.articleDetected, false);
+  assert.equal(normalized.type, 'post');
+});
+
+test('normalizeMetadata flags an X article so the caller asks for a manual transcript', () => {
+  const normalized = normalizeMetadata('x', {
+    rest_id: '100',
+    legacy: { id_str: '100', full_text: 'Taste is a muscle, not a gift. (teaser)' },
+    article: { article_results: { result: { title: 'Taste Is a Muscle, Not a Gift' } } },
+  });
+  assert.equal(normalized.articleDetected, true);
+  assert.equal(normalized.type, 'article');
+});
+
 test('normalizeThreadReaderTranscript extracts the full ordered x thread', () => {
   const normalized = normalizeThreadReaderTranscript(`
     <div id="tweet_1" class="content-tweet allow-preview" data-action="click->thread#showTweet" dir="auto">

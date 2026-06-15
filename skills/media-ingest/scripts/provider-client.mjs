@@ -204,6 +204,37 @@ function normalizeYouTubeMetadata(body) {
   };
 }
 
+// X has TWO long-form shapes, and they behave differently for ingest:
+//   1. Note Tweets — the >280-char "longform" tweets. The FULL body lives in
+//      note_tweet.note_tweet_results.result.text, NOT legacy.full_text (which is
+//      truncated to the teaser). We CAN and DO recover it here — cheap win.
+//   2. X Articles — the editorial long-form pieces (titled, rich-text essays).
+//      The tweet is only a teaser card; the article body is a SEPARATE, gated
+//      object the provider's tweet endpoint does not expose in full. These can't
+//      be auto-extracted, so we FLAG them (articleDetected) and the caller asks
+//      Elliot to paste the transcript manually.
+// Field shapes are defensive/optional — any absent field is simply skipped. The
+// exact ScrapeCreators article payload key is to be re-confirmed on the next
+// credited run (account was out of credits when this was written, 2026-06-15);
+// the detector checks every plausible carrier so it degrades safely either way.
+function noteTweetText(body) {
+  const result = body?.note_tweet?.note_tweet_results?.result
+    || body?.legacy?.note_tweet?.note_tweet_results?.result;
+  const text = result?.text;
+  return typeof text === 'string' && text.trim() ? text : null;
+}
+
+function detectArticle(body) {
+  const legacy = body?.legacy || {};
+  return Boolean(
+    body?.article
+    || body?.article_results?.result
+    || legacy?.article
+    || body?.tweet?.article
+    || body?.tweet?.article_results?.result,
+  );
+}
+
 function normalizeTwitterMetadata(body) {
   const legacy = body?.legacy || {};
   const authorResult = body?.core?.user_results?.result || {};
@@ -213,13 +244,15 @@ function normalizeTwitterMetadata(body) {
   const authorUsername = firstDefined(authorCore.screen_name, authorLegacy.screen_name);
   const authorDisplayName = firstDefined(authorCore.name, authorLegacy.name, authorUsername);
   const authorId = firstDefined(authorResult?.rest_id, authorLegacy.id_str, legacy.user_id_str);
+  const articleDetected = detectArticle(body);
   return {
     platform: 'x',
     id: firstDefined(body.rest_id, legacy.id_str),
-    title: titleFallback('x', authorUsername || authorDisplayName || authorId, media.type || 'post'),
-    description: legacy.full_text || '',
+    title: titleFallback('x', authorUsername || authorDisplayName || authorId, articleDetected ? 'article' : media.type || 'post'),
+    description: firstDefined(noteTweetText(body), legacy.full_text) || '',
+    articleDetected,
     createdAt: isoFromTwitter(legacy.created_at),
-    type: media.type || 'post',
+    type: articleDetected ? 'article' : media.type || 'post',
     author: {
       id: authorId || null,
       username: authorUsername || null,
