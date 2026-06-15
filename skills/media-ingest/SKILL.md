@@ -1,13 +1,15 @@
 ---
 name: media-ingest
-version: 2.1.0
+version: 2.2.0
 description: |
-  Ingest social/video, audio, PDF, book, screenshot, and GitHub-repo content
-  into the brain as analyzed pages (not transcript dumps), with entity
-  extraction and back-link propagation. Social/short-form video runs through a
-  deterministic fetch script that prefers free local extraction via yt-dlp and
-  falls back to the paid provider path only when needed, capturing
-  transcript + metadata in one raw file.
+  Ingest social/video, audio, PDF, book, screenshot, GitHub-repo, and
+  file-source content into the brain as analyzed pages (not transcript dumps),
+  with entity extraction and back-link propagation. Social/short-form video
+  runs through a deterministic fetch script that prefers free local extraction
+  via yt-dlp and falls back to the paid provider path only when needed,
+  capturing transcript + metadata in one raw file. When the source arrives as a
+  file on disk, the file is moved deterministically and transformed in place
+  (metadata/shape only) so its content is never retyped.
 triggers:
   - "watch this video"
   - "process this YouTube link"
@@ -29,6 +31,8 @@ triggers:
   - "PDF book"
   - "summarize this book"
   - "ingest it into my brain"
+  - "ingest this file"
+  - "ingest this document"
   - "what's in this screenshot"
   - "check out this repo"
 tools:
@@ -81,7 +85,9 @@ Every ingest produces:
 - One brain page filed **by primary subject, not by media format**, with real analysis --
   key points, not a transcript paste.
 - Raw source preserved for provenance (`gbrain files upload-raw`; social/video raws are
-  already preserved by the fetch script -- see Phase 2).
+  already preserved by the fetch script -- see Phase 2). When the source was a file you
+  received, that exact file is **moved** into the raw home and transformed in place, never
+  retyped (hard guardrail 5).
 - Every person and company that has a brain page **back-linked** from this page, and a
   timeline entry added on theirs. The item is not fully ingested until this is done.
 - The analyzed page written through to the engine and **verified retrievable** (for example via
@@ -94,7 +100,7 @@ Every ingest produces:
   and the page is complete without it (see the hard guardrails).
 
 <hard_guardrails>
-These four are load-bearing. The rest of this skill is normal directive guidance; these are not.
+These five are load-bearing. The rest of this skill is normal directive guidance; these are not.
 
 1. **Never invent `## Why I Saved This`.** It is Elliot's signal and only he can give it. If
    he gave a reason when he sent the item, write a faithful version of that reason. You may
@@ -113,6 +119,17 @@ These four are load-bearing. The rest of this skill is normal directive guidance
    into two files. (`gbrain sync` only ingests `.md`; the `.txt` keeps it out of search.)
 4. **Run concept/idea dedup (Phase 3) before writing any `type: concept` page.** This is the
    one dedup the script cannot do, and skipping it fills the brain with duplicate ideas.
+5. **Ingest a file source by MOVING the file, not by retyping it.** When the source material
+   arrives as a file on disk -- an inbound attachment (`~/.openclaw/media/inbound/...`),
+   anything in an `outputs/`, `ingest/`, or export folder, or a paste the harness saved to a
+   file -- locate that exact file and **move it deterministically** (`mv`, or `cp` then `trash`
+   the original) to its raw provenance home, then transform it **in place**: rewrite only the
+   frontmatter/metadata and structural shape, leaving the content **body byte-for-byte
+   untouched**. Never hand-transcribe a file's content into a new file -- *even when the harness
+   also inlined the text into your context*, because manual retyping risks silent content
+   drift. The on-disk file is the source of truth; prefer it over the inlined copy. When you
+   must verify, run a byte-diff of the body before/after (`diff` the original prose against the
+   transformed file's body) and confirm it is identical.
 </hard_guardrails>
 
 ## Phase 1 -- Identify format and fetch
@@ -120,6 +137,7 @@ These four are load-bearing. The rest of this skill is normal directive guidance
 | Format | Action |
 |--------|--------|
 | Social / short-form video URL (YouTube, TikTok, Instagram, X, Facebook) | Run the fetch script below. This skill owns the whole pipeline -- do not route to another skill first. |
+| File you received (attachment / export / paste-saved-as-file: `.md`, `.txt`, `.pdf`, ...) | Locate the file on disk (e.g. `~/.openclaw/media/inbound/<name>`). It is the source of truth; **move it** into the raw home and transform in place (Phase 2 + hard guardrail 5). Do not retype its body. |
 | Audio file | Transcribe with the available STT service |
 | PDF | Extract text (OCR if needed) |
 | Book PDF | Extract text, identify chapters/sections |
@@ -148,7 +166,7 @@ exit code and the stderr message:
 | Exit `0`, `ALREADY INGESTED` | Do **not** re-file. This is the (immediate) final message: tell Elliot it's already ingested, cite the printed path / its concept page, and ask what he'd like changed. |
 | Exit `0`, transcript `empty` (no captions/audio) | Build a transcript-less page autonomously from the description + metadata. Don't stop to confirm -- note in the final summary that there was no transcript. |
 | `⚠ POSSIBLE DUPLICATE CONTENT` (same clip cross-posted / a trimmed cut) | Make the call yourself: **default to adding this URL as an extra source on the existing concept page** ("Also posted on..."); file a separate page only when the content is clearly distinct. Note the decision (and the script's comparison) in the final summary so Elliot can re-file if he disagrees. |
-| Exit `5`, `X LONG-FORM ARTICLE DETECTED` | **Stop and ask Elliot to paste the full article text.** X *Articles* (the titled editorial essays) are only a teaser card on the tweet endpoint -- the body is a separate, gated object no provider route exposes, and the direct article URL is 402/gated. Do **not** build a page from the teaser. Once Elliot pastes the text, ingest it manually (treat his paste as the transcript) and persist via the normal Phase 2-5 flow. NOTE: ordinary long *Note Tweets* (>280 chars) are **not** affected -- their full body is recovered automatically, so they ingest normally. |
+| Exit `5`, `X LONG-FORM ARTICLE DETECTED` | **Stop and ask Elliot to paste or send the full article text.** X *Articles* (the titled editorial essays) are only a teaser card on the tweet endpoint -- the body is a separate, gated object no provider route exposes, and the direct article URL is 402/gated. Do **not** build a page from the teaser. When Elliot supplies the text: if he **sends it as a file** (attachment / export), do **not** retype it -- **move that exact file** into the raw home (e.g. `sources/social/<platform>-<id>.txt`) and transform it in place per hard guardrail 5; if he pastes it inline with no file artifact, treat his paste as the transcript. Either way, persist via the normal Phase 2-5 flow. NOTE: ordinary long *Note Tweets* (>280 chars) are **not** affected -- their full body is recovered automatically, so they ingest normally. |
 | Any non-zero exit, or a `>>> SURFACE THIS TO THE USER` line | **Stop.** Relay the exact HTTP status + body the script printed. Do not re-run, do not hand-write the raw. (A failed fetch can't be ingested -- this is the one place you stop early.) |
 
 Exit codes, for reference: `0` ok / already-ingested - `1` usage - `2` no API key -
@@ -159,6 +177,28 @@ Exit codes, for reference: `0` ok / already-ingested - `1` usage - `2` no API ke
 
 For non-social formats, save the original for provenance:
 `gbrain files upload-raw <file> --page <slug>`.
+
+<file_source_move>
+**When the source material is a file you received, move it -- do not retype it (hard guardrail 5).**
+Inbound attachments land on disk (Telegram/file sends typically at
+`~/.openclaw/media/inbound/<name>`); exports and paste-saved-as-files land in an `outputs/`,
+`ingest/`, or similar folder. That on-disk file is the source of truth, even though the harness
+usually also inlines its text into your context -- the inlined copy is for *reading*, never the
+thing you copy bytes from.
+
+1. **Locate** the actual file (`find ~/.openclaw/media/inbound -iname '<name>*'`, or use the
+   path from the message envelope).
+2. **Move it deterministically** to its raw home -- `mv` it (or `cp` then `trash` the original)
+   to `sources/social/<platform>-<id>.txt` (for an X-article/social paste matching an existing
+   raw, append into that raw's body), or to the format-appropriate raw path otherwise.
+3. **Transform in place:** edit only the frontmatter / metadata / structural shape (add
+   provenance stamps, a `## Full Article Body` heading, normalize the header lines). **Leave the
+   content body byte-for-byte unchanged** -- no paraphrasing, no trimming, no re-typing.
+4. **Verify no drift:** `diff` the original file's prose against the transformed file's body and
+   confirm it is identical before moving on.
+
+This guarantees you only ever touch metadata, and the content can't silently change.
+</file_source_move>
 
 For social/video, the script already wrote the provenance artifact at
 `sources/social/<platform>-<id>.txt`. **Read it -- do not re-fetch.** Its frontmatter holds the
@@ -332,6 +372,10 @@ Each is paired with what to do instead.
 
 - **Dumping a raw transcript without analysis** -> write key points and structure; the transcript
   lives in the raw file, not the page.
+- **Hand-transcribing a file source's content into a new file** (retyping an attachment, export,
+  or paste-saved-as-file you received) -> **move** the original file to its raw home and edit only
+  its frontmatter/shape, leaving the body byte-for-byte untouched (hard guardrail 5). The on-disk
+  file beats the harness-inlined copy; verify with a body `diff`.
 - **Inferring or placeholding `## Why I Saved This`** -> use Elliot's stated reason if he gave
   one, but lightly normalize it into clean prose instead of copying typos verbatim; otherwise
   omit it and ask once at the final summary, adding it and re-ingesting only if he answers
