@@ -719,6 +719,18 @@ export interface SyncOpts {
   noPull?: boolean;
   noEmbed?: boolean;
   noExtract?: boolean;
+  /**
+   * Fork patch B4 (2026-06-14) — run the facts:absorb backstop INLINE
+   * (blocking) instead of the default fire-and-forget queue. The queue path
+   * loses every facts job on CLI exit (teardown gives background work a short
+   * drain budget; an ~8s Sonnet extraction never survives it), so on a
+   * CLI-per-command install (no long-lived `serve`/autopilot process) the
+   * facts table never populates. Inline mode awaits the full
+   * extract→resolve→dedup→fence pipeline per page so it completes before the
+   * process exits. Wired into the 15-min Live Sync cron (tiny deltas → 1-2
+   * blocking Sonnet calls, well inside the cron budget). See PATCH.md B4.
+   */
+  factsInline?: boolean;
   /** Bug 9 — acknowledge + skip past current failure set (CLI --skip-failed). */
   skipFailed?: boolean;
   /** Bug 9 — re-attempt unacknowledged failures explicitly (CLI --retry-failed). */
@@ -2823,8 +2835,16 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
   // ('conversation'/'transcript'/'therapy'/'call' aren't real
   // PageTypes), (b) a divergent eligibility shape from put_page,
   // and (c) raw extract→insert without dedup/supersede.
+  //
+  // Fork patch B4 (2026-06-14): `opts.factsInline` flips queue→inline so the
+  // backstop actually completes on a CLI-per-command install (the queue path's
+  // fire-and-forget jobs are killed on process exit before the ~8s Sonnet call
+  // finishes — facts never persist). Live Sync deltas are tiny (1-2 pages), so
+  // the blocking cost is bounded. The <=50 guard still protects against a large
+  // sync turning into dozens of serial blocking Sonnet calls.
   if (!opts.noExtract && pagesAffected.length > 0 && pagesAffected.length <= 50) {
     const { runFactsBackstop } = await import('../core/facts/backstop.ts');
+    const factsMode: 'queue' | 'inline' = opts.factsInline ? 'inline' : 'queue';
     const factsSourceId = opts.sourceId ?? 'default';
     for (const slug of pagesAffected) {
       try {
@@ -2848,7 +2868,7 @@ async function performSyncInner(engine: BrainEngine, opts: SyncOpts): Promise<Sy
             sourceId: factsSourceId,
             sessionId: `sync:${slug}`,
             source: 'sync:import',
-            mode: 'queue',
+            mode: factsMode,
             notabilityFilter: 'high-only',
           },
         );
@@ -3210,6 +3230,119 @@ export function composeAbortSignals(
   return AbortSignal.any(live);
 }
 
+/**
+ * Fork patch B4 (2026-06-14) — one-time facts backfill.
+ *
+ * The facts:absorb queue path is fire-and-forget; on a CLI-per-command install
+ * (no long-lived serve/autopilot to drain it) every job dies on process exit,
+ * so the facts table started life empty on Supabase. The `--facts-inline` flag
+ * fixes this going FORWARD (Live Sync extracts the delta inline). This function
+ * fixes the BACKLOG: it walks every already-ingested, facts-eligible page for a
+ * source and runs the backstop INLINE (blocking) so the pipeline actually
+ * completes and persists.
+ *
+ * Idempotent: dedup at cosine 0.95 means re-running never writes duplicate fact
+ * rows (a re-run only re-spends the extraction LLM call — fine for a one-time
+ * op, and it makes interrupted runs safe to resume). Uses the same 'high-only'
+ * notability filter as steady-state sync so the backfilled set matches what the
+ * ongoing path produces (MEDIUM/LOW stay the dream cycle's job).
+ *
+ * Writes `## Facts` fences onto the resolved ENTITY pages (person/company), so
+ * a backfill mutates brain markdown on disk → commit + push after.
+ */
+export async function runFactsBackfill(
+  engine: BrainEngine,
+  opts: { sourceId: string; concurrency?: number; limit?: number; json?: boolean; signal?: AbortSignal },
+): Promise<{ scanned: number; eligible: number; processed: number; inserted: number; duplicate: number; failed: number }> {
+  const { isFactsBackstopEligible } = await import('../core/facts/eligibility.ts');
+  const { runFactsBackstop } = await import('../core/facts/backstop.ts');
+  const concurrency = Math.max(1, opts.concurrency ?? 4);
+
+  // listPages defaults to LIMIT 100 — paginate so a brain with >100 pages
+  // gets fully covered (else the backfill silently skips the tail).
+  const pages: Awaited<ReturnType<typeof engine.listPages>> = [];
+  const PAGE_SIZE = 500;
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const batch = await engine.listPages({ sourceId: opts.sourceId, limit: PAGE_SIZE, offset, sort: 'slug' });
+    pages.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
+  let eligible = pages.filter((p) =>
+    isFactsBackstopEligible(p.slug, {
+      type: p.type,
+      compiled_truth: p.compiled_truth ?? '',
+      frontmatter: p.frontmatter ?? {},
+    }).ok,
+  );
+  // --limit N: staged/test runs. Stable slug order so a limited run is
+  // deterministic and a later unlimited run is a strict superset.
+  eligible.sort((a, b) => a.slug.localeCompare(b.slug));
+  if (opts.limit !== undefined && opts.limit >= 0) {
+    eligible = eligible.slice(0, opts.limit);
+  }
+
+  let processed = 0;
+  let inserted = 0;
+  let duplicate = 0;
+  let failed = 0;
+  const total = eligible.length;
+  if (!opts.json) {
+    process.stderr.write(`facts backfill: ${total} eligible / ${pages.length} pages (source=${opts.sourceId}), inline @ concurrency ${concurrency}\n`);
+  }
+
+  // Simple fixed-size worker pool over an atomic index — keeps ~`concurrency`
+  // blocking Sonnet extractions in flight at once. Pool is now 10, so 4 leaves
+  // headroom for the dashboard + the 15-min Live Sync cron.
+  let cursor = 0;
+  const runWorker = async (): Promise<void> => {
+    for (;;) {
+      if (opts.signal?.aborted) return;
+      const i = cursor++;
+      if (i >= total) return;
+      const page = eligible[i];
+      try {
+        const r = await runFactsBackstop(
+          {
+            slug: page.slug,
+            type: page.type,
+            compiled_truth: page.compiled_truth ?? '',
+            frontmatter: page.frontmatter ?? {},
+          },
+          {
+            engine,
+            sourceId: opts.sourceId,
+            sessionId: `backfill:${page.slug}`,
+            source: 'sync:import',
+            mode: 'inline',
+            notabilityFilter: 'high-only',
+            abortSignal: opts.signal,
+          },
+        );
+        processed += 1;
+        if (r.mode === 'inline') {
+          inserted += r.inserted;
+          duplicate += r.duplicate;
+        }
+        if (!opts.json && processed % 10 === 0) {
+          process.stderr.write(`  …${processed}/${total} pages, ${inserted} facts inserted\n`);
+        }
+      } catch (err) {
+        failed += 1;
+        if (!opts.json) {
+          process.stderr.write(`  ! ${page.slug}: ${err instanceof Error ? err.message : String(err)}\n`);
+        }
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, total || 1) }, () => runWorker()));
+
+  const summary = { scanned: pages.length, eligible: total, processed, inserted, duplicate, failed };
+  if (opts.json) console.log(JSON.stringify(summary, null, 2));
+  else process.stderr.write(`facts backfill done: ${inserted} inserted, ${duplicate} dup, ${failed} failed (${processed}/${total} pages)\n`);
+  return summary;
+}
+
 export async function runSync(engine: BrainEngine, args: string[]) {
   // v0.40 Federated Sync v2: `gbrain sync trigger` subcommand
   // Routes to runSyncTrigger which queues a 'sync' minion job with
@@ -3234,6 +3367,16 @@ Options:
   --no-extract         Skip the link/timeline extraction step. Pages will
                        show as stale in 'gbrain doctor'; run
                        'gbrain extract --stale' later to catch up.
+  --facts-inline       Run the facts:absorb backstop INLINE (blocking) instead
+                       of the fire-and-forget queue. Required on CLI-per-command
+                       installs (no serve/autopilot) or facts never persist —
+                       the queue jobs die on process exit. Wire into the Live
+                       Sync cron. (fork patch B4)
+  --facts-backfill     One-time: run the inline facts pipeline over EVERY
+                       eligible already-ingested page for the source (ignores
+                       the git diff; doesn't move commit pointers). Idempotent.
+                       Writes ## Facts fences onto entity pages → commit after.
+                       (fork patch B4)
   --workers N          Run the import phase with N parallel workers
                        (alias: --concurrency). Default: 4 when the
                        diff is >100 files, else serial.
@@ -3289,6 +3432,8 @@ See also:
   const noPull = args.includes('--no-pull');
   const noEmbed = args.includes('--no-embed');
   const noExtract = args.includes('--no-extract'); // v0.42.7 #1696
+  const factsInline = args.includes('--facts-inline'); // fork patch B4 (2026-06-14)
+  const factsBackfill = args.includes('--facts-backfill'); // fork patch B4 — one-time populate
   const skipFailed = args.includes('--skip-failed');
   const retryFailed = args.includes('--retry-failed');
   const noSchemaPack = args.includes('--no-schema-pack'); // v0.41.37.0 #1569
@@ -3495,6 +3640,22 @@ See also:
     if (acked.count > 0) console.log(`Acknowledged ${acked.count} pre-existing failure(s).`);
   }
 
+  // Fork patch B4 (2026-06-14): one-time facts backfill over all eligible
+  // already-ingested pages. Bypasses the normal git-diff sync entirely — it
+  // doesn't touch commit pointers; it just runs the inline facts pipeline over
+  // the existing corpus to populate a table the fire-and-forget queue path
+  // never filled on this CLI-per-command install.
+  if (factsBackfill) {
+    const limitStr = args.find((a, i) => args[i - 1] === '--limit');
+    const limit = limitStr !== undefined ? parseInt(limitStr, 10) : undefined;
+    await runFactsBackfill(engine, {
+      sourceId,
+      json: jsonOut,
+      limit: Number.isFinite(limit as number) ? (limit as number) : undefined,
+    });
+    return;
+  }
+
   // v0.19.0 — `sync --all` iterates all registered sources with a
   // local_path. Sources are the canonical v0.18.0 abstraction: per-source
   // last_commit, last_sync_at, config.federated flags. Per-source
@@ -3630,7 +3791,7 @@ See also:
         repoPath: src.local_path!,
         dryRun, full, noPull,
         noEmbed: effectiveNoEmbed,
-        noExtract,
+        noExtract, factsInline,
         skipFailed, retryFailed, noSchemaPack,
         sourceId: src.id,
         strategy: cfg.strategy,
@@ -3846,7 +4007,7 @@ See also:
   const singleSourceInterrupt = new AbortController();
   const onSingleSourceSigint = () => { try { singleSourceInterrupt.abort(new Error('SIGINT')); } catch { /* */ } };
   const opts: SyncOpts = {
-    repoPath, dryRun, full, noPull, noEmbed, noExtract, skipFailed, retryFailed, noSchemaPack, sourceId,
+    repoPath, dryRun, full, noPull, noEmbed, noExtract, factsInline, skipFailed, retryFailed, noSchemaPack, sourceId,
     strategy: strategyArg, concurrency,
     signal: composeAbortSignals(singleSourceInterrupt.signal, singleSourceController?.signal),
   };
@@ -4073,6 +4234,8 @@ export async function syncOneSource(
     noSchemaPack?: boolean;
     /** v0.42.7 #1696: propagate --no-extract into every per-source sync. */
     noExtract?: boolean;
+    /** Fork patch B4: propagate --facts-inline into every per-source sync. */
+    factsInline?: boolean;
   },
 ): Promise<{ result: SyncResult; log: string }> {
   const cfg = (src.config || {}) as { strategy?: 'markdown' | 'code' | 'auto' };
@@ -4084,6 +4247,7 @@ export async function syncOneSource(
     noPull: shared.noPull,
     noEmbed: shared.noEmbed,
     noExtract: shared.noExtract,
+    factsInline: shared.factsInline,
     skipFailed: shared.skipFailed,
     retryFailed: shared.retryFailed,
     noSchemaPack: shared.noSchemaPack,

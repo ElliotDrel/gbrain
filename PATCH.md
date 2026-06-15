@@ -349,3 +349,38 @@ falling through with a warn instead of hanging. Full doctor now ~10s at pool=2.
 **Why:** a single small-pool remote engine must not be able to wedge `gbrain doctor`.
 **How to recreate:** make `runAllOnboardChecks` iterate `for ... await` instead of
 `Promise.all`, and wrap its call in `doctor.ts` with a 30s `AbortSignal.timeout`.
+
+## B4. MODIFIED gbrain source — `src/commands/sync.ts` (facts backstop: `--facts-inline` + `--facts-backfill`)
+**Status: ACTIVE** (added 2026-06-14; upstream has NOT fixed — the queue design assumes a long-lived process).
+**Upstream:** none. The facts:absorb pipeline runs as fire-and-forget via `FactsQueue`
+(`src/core/facts/queue.ts`); on CLI exit, background-work teardown gives it only a short
+drain budget. An ~8s Sonnet extraction never survives that, so on a **CLI-per-command
+install** (this brain — no long-lived `serve`/autopilot draining the queue) EVERY facts
+job dies on exit and the `facts` table stays empty forever. Confirmed live 2026-06-14:
+0 facts rows ever on Supabase, 35 `facts:absorb` pipeline_error rows in 24h (all the
+abort-on-exit). garrytan's reference setup runs autopilot/serve, so the queue drains
+there and the bug is invisible upstream.
+**Drop-when:** upstream makes the facts backstop synchronous on the sync/CLI path (e.g.
+a `mode:'inline'` default for sync, or a guaranteed post-command drain that awaits
+in-flight extractions). Check: `git show origin/master:src/commands/sync.ts | grep -n
+"mode: 'queue'\|factsInline"` — if sync no longer hard-codes `mode:'queue'` OR teardown
+awaits the facts queue to completion → retire.
+**Change:** added (a) `--facts-inline` — flips the sync facts backstop from `mode:'queue'`
+to `mode:'inline'` (blocking) so the extract→resolve→dedup→fence pipeline completes
+before process exit; threaded `factsInline` through `SyncOpts` + all 3 opts constructions
++ `syncOneSource`. Wired into the 15-min Live Sync cron (tiny deltas → 1-2 blocking
+Sonnet calls, well inside the 300s budget). And (b) `--facts-backfill [--limit N]` — a
+one-time path (`runFactsBackfill`) that runs the inline pipeline over every eligible
+already-ingested page (paginates past listPages' default LIMIT 100), to populate the
+backlog the queue never filled. Idempotent (dedup @ 0.95). Backfill 2026-06-14 inserted
+48 facts from 50 eligible pages, 0 failures.
+**Why:** a CLI-per-command brain must actually persist facts; the queue path silently
+drops 100% of them here.
+**How to recreate:** in sync.ts add `factsInline?: boolean` to `SyncOpts`; parse
+`--facts-inline`/`--facts-backfill`; set the backstop call's `mode` to inline when
+factsInline; add `runFactsBackfill` (listPages-paginated, eligibility-filtered, inline
+`runFactsBackstop` per page at concurrency 4) + a `--facts-backfill` branch in `runSync`.
+**Note:** the entity resolver sometimes returns unprefixed/mis-prefixed slugs
+(`elliot-drel`, `people-elliot-drel`) → those facts route to the legacy DB-only path
+(still persisted, just not fenced). One backfill fact mis-resolved to a phantom
+`people/readme` page (trashed). Pre-existing resolver quirk, separate from this patch.
