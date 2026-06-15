@@ -444,3 +444,36 @@ git-fast-path both exclude README/index/log/schema, keep real pages).
 **Companion data cleanup (not code):** soft-deleted all 22 metafile ghost pages from the live
 Supabase engine via `gbrain delete` (recoverable). Verified 0 facts / 0 inbound / 0 outbound
 links on them first; 208 live pages remain, 0 metafile ghosts.
+
+## B7. MODIFIED gbrain source — `src/core/sync.ts` (`SYNC_SKIP_FILES` adds `RESOLVER.md`)
+**Status: ACTIVE** (added 2026-06-15; upstream has NOT fixed).
+**Upstream:** none observed. `SYNC_SKIP_FILES` skips the structural metafiles
+(`schema.md`, `index.md`, `log.md`, `README.md`) but OMITS `RESOLVER.md` — even though the
+recommended-schema docs explicitly group `RESOLVER.md` WITH those siblings as a structural
+config document, not searchable content: the `brain/` tree lists "`RESOLVER.md` — master
+decision tree for filing" alongside `schema.md`/`index.md`/`log.md`, and the architecture
+section calls the schema "a document … plus `schema.md` and `RESOLVER.md` … that tells the
+agent how the brain is structured" (`docs/GBRAIN_RECOMMENDED_SCHEMA.md`). So `RESOLVER.md` is
+a routing/config metafile by the project's OWN docs, but was the lone structural sibling
+missing from the skip list.
+**How it bit us:** the brain's top-level `RESOLVER.md` got synced as a content page
+(`slug=resolver`, title "Brain Resolver", 1 content chunk) and showed up as a searchable
+result. Surfaced in the 2026-06-15 2-day audit as judgment-call #1 ("RESOLVER.md still
+indexed as a searchable brain page"). Elliot's call: "check gbrain docs and do whatever they
+say" → docs say it's structural → exclude it.
+**Drop-when:** upstream adds `RESOLVER.md` to `SYNC_SKIP_FILES`. Check:
+`git show origin/master:src/core/sync.ts | grep -n "RESOLVER.md"` — if present in
+`SYNC_SKIP_FILES` → retire.
+**Change:** append `'RESOLVER.md'` to `SYNC_SKIP_FILES` in `src/core/sync.ts`. One chokepoint:
+`classifySync` (so `isSyncable`/`unsyncableReason`) AND B6's `isCollectibleForWalker` both
+read this list, so sync + import now both treat `RESOLVER.md` as a metafile.
+**Why:** the docs designate `RESOLVER.md` a structural config document on par with
+`schema.md`; indexing it as content pollutes search and (like other folder-titled metafiles,
+see B6) risks fuzzy-resolution noise.
+**How to recreate:** add `'RESOLVER.md'` to the `SYNC_SKIP_FILES` array + update its doc
+comment. Tests: `test/sync-isSyncable-shape.test.ts` (RESOLVER.md anywhere → `'metafile'`;
+canonical-set assertion) + `test/import-metafile-skip.test.ts` (FS-walk + git-fast-path both
+exclude RESOLVER.md).
+**Companion data cleanup (not code):** soft-deleted the live `resolver` page via
+`gbrain delete resolver` (recoverable 72h). Verified 0 facts / 0 links / 0 page_links first;
+206 live pages remain, 0 chunks for `resolver`, absent from search.

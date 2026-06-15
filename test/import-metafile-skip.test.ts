@@ -40,13 +40,14 @@ describe('collectSyncableFiles metafile exclusion (B6)', () => {
     write('index.md', '# Brain Index\n');
     write('log.md', '# Brain Log\n');
     write('schema.md', '# Brain Schema\n');
+    write('RESOLVER.md', '# Brain Resolver\n');
   }
 
-  test('FS-walk path excludes README/index/log/schema, keeps real pages', () => {
+  test('FS-walk path excludes README/index/log/schema/RESOLVER, keeps real pages', () => {
     seed();
     const got = collectSyncableFiles(tmp).map(f => basename(f));
     expect(got).toContain('elliot-drel.md');
-    for (const meta of ['README.md', 'index.md', 'log.md', 'schema.md']) {
+    for (const meta of ['README.md', 'index.md', 'log.md', 'schema.md', 'RESOLVER.md']) {
       expect(got).not.toContain(meta);
     }
   });
@@ -61,5 +62,6 @@ describe('collectSyncableFiles metafile exclusion (B6)', () => {
     expect(got).not.toContain('index.md');
     expect(got).not.toContain('log.md');
     expect(got).not.toContain('schema.md');
+    expect(got).not.toContain('RESOLVER.md');
   });
 });
