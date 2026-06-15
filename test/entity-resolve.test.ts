@@ -3,6 +3,7 @@ import {
   resolveEntitySlug,
   resolveEntitySlugWithSource,
   slugify,
+  slugifyPreservingPrefix,
   type ResolutionSource,
 } from '../src/core/entities/resolve.ts';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
@@ -167,6 +168,33 @@ describe('slugify', () => {
 
   it('strips accents', () => {
     expect(slugify('José García')).toBe('jose-garcia');
+  });
+});
+
+// Fork patch B5 (2026-06-14) — the resolver fallback must preserve a directory
+// prefix instead of mangling the slash. Plain slugify('people/Elliot Drel')
+// → 'people-elliot-drel', which the fence-write stub-guard rejects as
+// unprefixed → the fact silently drops to DB-only. slugifyPreservingPrefix
+// keeps it fenceable.
+describe('slugifyPreservingPrefix', () => {
+  it('preserves a directory prefix and slugifies the tail', () => {
+    expect(slugifyPreservingPrefix('people/Elliot Drel')).toBe('people/elliot-drel');
+  });
+
+  it('preserves an already-valid prefixed slug unchanged', () => {
+    expect(slugifyPreservingPrefix('people/elliot-drel')).toBe('people/elliot-drel');
+  });
+
+  it('lowercases the directory segment too', () => {
+    expect(slugifyPreservingPrefix('People/Harsh Vyas')).toBe('people/harsh-vyas');
+  });
+
+  it('falls back to flat slugify when there is no slash', () => {
+    expect(slugifyPreservingPrefix('Elliot Drel')).toBe('elliot-drel');
+  });
+
+  it('collapses extra path segments in the tail to hyphens', () => {
+    expect(slugifyPreservingPrefix('companies/Acme Corp/East')).toBe('companies/acme-corp-east');
   });
 });
 

@@ -380,7 +380,33 @@ drops 100% of them here.
 `--facts-inline`/`--facts-backfill`; set the backstop call's `mode` to inline when
 factsInline; add `runFactsBackfill` (listPages-paginated, eligibility-filtered, inline
 `runFactsBackstop` per page at concurrency 4) + a `--facts-backfill` branch in `runSync`.
-**Note:** the entity resolver sometimes returns unprefixed/mis-prefixed slugs
-(`elliot-drel`, `people-elliot-drel`) → those facts route to the legacy DB-only path
-(still persisted, just not fenced). One backfill fact mis-resolved to a phantom
-`people/readme` page (trashed). Pre-existing resolver quirk, separate from this patch.
+**Note:** see B5 — the unprefixed/mis-prefixed-slug routing (`elliot-drel`,
+`people-elliot-drel`) was a real resolver bug, fixed there.
+
+## B5. MODIFIED gbrain source — `src/core/entities/resolve.ts` (resolver fallback mangles prefixed slugs)
+**Status: ACTIVE** (added 2026-06-14; upstream has NOT fixed).
+**Upstream:** none observed. `resolveEntitySlug` / `resolveEntitySlugWithSource` end with a
+plain `slugify(trimmed)` fallback. When the extractor emits an already-prefixed slug
+(`people/elliot-drel`) that doesn't exact/fuzzy-match an existing page, `slugify` collapses
+the `/` to `-` → `people-elliot-drel`. That mangled string (a) can never match the real
+`people/elliot-drel` page and (b) is unprefixed, so the facts fence-write stub-guard
+refuses it → the fact silently drops to the DB-only path instead of being fenced onto a
+person/company page. Found 2026-06-14: 14 of 48 backfilled facts (10 about Elliot, who had
+no self-page) were DB-only for this reason.
+**Drop-when:** upstream's resolver preserves a directory prefix in its fallback. Check:
+`git show origin/master:src/core/entities/resolve.ts | grep -n "slugifyPreservingPrefix\|indexOf('/')"`
+— if the fallback splits on the first slash / preserves the prefix → retire.
+**Change:** added `slugifyPreservingPrefix(raw)` — splits on the FIRST `/`, slugifies each
+side, rejoins with `/` (so `people/Elliot Drel` → `people/elliot-drel`, a valid fenceable
+slug; no slash → unchanged flat `slugify`). Used in the step-4 fallback of BOTH
+`resolveEntitySlug` and `resolveEntitySlugWithSource`. The exported `slugify` keeps its flat
+contract for other callers.
+**Why:** a correctly-prefixed entity slug from the extractor must stay fenceable, not get
+mangled into a DB-only orphan.
+**How to recreate:** add the `slugifyPreservingPrefix` export and call it instead of
+`slugify` in the two resolver fallbacks. Tests: `test/entity-resolve.test.ts` →
+`describe('slugifyPreservingPrefix')`.
+**Companion content fix (not code):** created the 3 missing target pages
+`people/elliot-drel` (the owner had no self-page), `people/harsh-vyas`, `people/nishant-nair`
+(both were dangling backlinks from their meeting notes), then re-ran `--facts-backfill`.
+Result: 62 facts, **0 orphan entity_slugs** (every fact resolves to a real page).
