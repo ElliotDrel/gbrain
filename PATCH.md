@@ -333,7 +333,9 @@ one problem; trust upstream's.
 **Status: ACTIVE** (added 2026-06-13, commit `7c734c4d`; upstream has NOT fixed — verified on 0.42.42.0).
 **Upstream:** none. `garrytan/gbrain` runs PGLite (no connection pool), so the
 deadlock is invisible there; this only bites a remote pooled engine (Postgres/
-Supabase) with a small pool, which is THIS brain's config (`GBRAIN_POOL_SIZE=2`).
+Supabase) with a small pool. (This brain ran `GBRAIN_POOL_SIZE=2` when this patch
+was added; raised to **10** on 2026-06-14 -- the real fix was serializing the
+checks below, NOT the pool size, so this patch stays ACTIVE regardless of pool.)
 **Drop-when:** upstream runs onboard checks sequentially (or pool-aware) AND bounds
 the doctor call with a timeout. Check: `git show origin/master:src/core/onboard/checks.ts
 | grep -nE "for .*await|sequential|POOL"` and `git show origin/master:src/commands/doctor.ts
@@ -345,7 +347,8 @@ pool and deadlock indefinitely (>22min observed). doctor also called it without 
 AbortSignal timeout its own doc comment requires.
 **Edit made:** run the onboard checks **sequentially** (so in-flight connections fit
 any pool size) + bound the doctor call with a **30s** defensive timeout in `doctor.ts`,
-falling through with a warn instead of hanging. Full doctor now ~10s at pool=2.
+falling through with a warn instead of hanging. Full doctor ~10s (verified at
+pool=2 when added; still fine at the current pool=10).
 **Why:** a single small-pool remote engine must not be able to wedge `gbrain doctor`.
 **How to recreate:** make `runAllOnboardChecks` iterate `for ... await` instead of
 `Promise.all`, and wrap its call in `doctor.ts` with a 30s `AbortSignal.timeout`.
