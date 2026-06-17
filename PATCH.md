@@ -8,12 +8,27 @@ workspace scripts) unless they've been moved upstream into gbrain itself.
 
 No code snippets — only intent, scope, and enough pointers to rebuild quickly.
 
-Last updated: 2026-06-12 (on gbrain 0.42.40.0). Full drift sweep this date:
-diffed every gbrain-owned `src/` and stock-skill file against `origin/master` and
-reconciled the manifest — added A4–A7 (plain-bullet timeline convention,
-reference-entity flag, conversation body reader, ingest social-routing) which had
-real inline edits to stock files but no entry. A1–A3, B1 (active), B2 (retired)
-all re-verified present/correct.
+Last updated: 2026-06-17 (on gbrain 0.42.47.0). Upgrade audit this date:
+rebased the 87 fork patches from `0.42.42.0` onto upstream `origin/master`
+`0.42.47.0` (came in: 0.42.43 push-based context #2095 + teardown-exit #2084,
+0.42.44 docs, 0.42.45 delta-aware sync cost estimator #2139, 0.42.46 federated
+by-slug read scope #2200, 0.42.47 brain-resident skillpacks + advisor #2180).
+Conflicts (all resolved keep-ours / keep-both): `gateway.ts` (B1 surface —
+kept upstream's `openAICompatAsymmetricFetch`, then B1 cleanly RETIRED later in
+the stack), `cli.ts` CLI_ONLY set (union: upstream `advisor`/`watch` + our
+`reference`), `KEY_FILES.md` (kept our reference-flag bullet + upstream's
+5-sink background-work bullet), `commands/sync.ts` (kept BOTH upstream
+`--skip-failed` per-source ack + our B4 `--facts-backfill`). Section B audit
+vs 0.42.47.0: **B1, B2 retired** (upstream shipped equivalents); **B3, B4, B5,
+B6, B7 still ACTIVE** — none conflicted except B4 (resolved keep-both), and the
+B5/B6/B3 regression tests (entity-resolve, import-metafile-skip, fix-wave-
+structural) pass on the rebased tree, so all five remain present and still
+needed. Section A customizations survived intact. typecheck clean; pushed to
+fork `master` (b363e340 -> e2c64048, force-with-lease).
+
+Prior sweep: 2026-06-12 (on 0.42.40.0) — added A4–A7 (plain-bullet timeline
+convention, reference-entity flag, conversation body reader, ingest
+social-routing); re-verified A1–A3.
 
 ---
 
