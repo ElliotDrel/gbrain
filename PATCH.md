@@ -184,15 +184,35 @@ formats; keep the "plain-bullet is canonical, bold-pipe is legacy" wording there
 
 ## A5. Reference-entity flag (`reference: true`) — new files + inline coverage exclusions
 **Change:** added a `reference: true` frontmatter flag (set via `gbrain reference
-<slug>`) for person/company pages the user only reads ABOUT (book authors,
-historical figures, companies discussed in an article) — they stay fully typed,
-searchable, enrichable, and linkable but are **exempt from entity coverage
-nudges** (timeline/links), which don't apply to figures with no dated history in
-the user's own life.
+<people/slug>`) for **people** the user only reads ABOUT (book authors,
+historical figures, public creators) — they stay fully typed, searchable,
+enrichable, and linkable but are **exempt from entity coverage nudges**
+(timeline/links), which don't apply to figures with no dated history in the
+user's own life. **PEOPLE-ONLY (Elliot, 2026-06-17):** companies are never
+reference, and the system never special-cases companies — any NON-person page
+carrying the flag is generically illegal. Enforced three ways: a deterministic
+audit, a `put_page` runtime guard, and a doctor check.
 **Edit made:**
 - **New files (conflict-free):** `src/core/reference-flag.ts` (`referenceExclusionSql()`
-  helper), `src/commands/reference.ts` (`gbrain reference` command),
+  helper), `src/commands/reference.ts` (`gbrain reference` command + `gbrain
+  reference audit` deterministic drift audit: flags any non-person page with a
+  reference indicator by name, reference people with real interaction evidence
+  → should be real, and content-only people → likely missed reference; direction
+  decided from backlinks + timeline),
   `skills/conventions/reference-entities.md` (the convention).
+- **People-only guard + audit + doctor check (2026-06-17, commit 94d4fe05 then
+  refined):**
+  - `src/core/operations.ts` — `put_page` rejects `reference: true` / 
+    `entity_relationship` on ANY non-people page generically (no company
+    special-casing), requires `entity_relationship` on new remote people pages,
+    and rejects reference people that carry interaction signals. Description
+    reworded to "non-people pages must never carry the flag."
+  - `src/commands/doctor.ts` — `referenceFlagHealthCheck()` folds the audit into
+    `gbrain doctor` as `reference_flag_health` (registered in BOTH check
+    assemblies: the remote-subset ~L821 and the full CLI run ~L7195). So the
+    existing doctor crons run it — there is NO standalone reference cron.
+  - `src/core/doctor-categories.ts` — `reference_flag_health` added to
+    `BRAIN_CHECK_NAMES` (category: brain).
 - **Inline edits to stock files (THESE conflict on upgrade — the real reason this
   entry exists):**
   - `src/cli.ts` — add `'reference'` to `CLI_ONLY` + a `case 'reference'` dispatch

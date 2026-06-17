@@ -3,6 +3,7 @@ import { setCliExitVerdict } from '../core/cli-force-exit.ts';
 import * as db from '../core/db.ts';
 import { LATEST_VERSION, getIdleBlockers } from '../core/migrate.ts';
 import { checkResolvable } from '../core/check-resolvable.ts';
+import { buildReferenceAuditReport, loadAuditPages } from './reference.ts';
 import { autoFixDryViolations, type AutoFixReport, type FixOutcome } from '../core/dry-fix.ts';
 import { autoDetectSkillsDirReadOnly } from '../core/repo-root.ts';
 import { loadOrDeriveManifest } from '../core/skill-manifest.ts';
@@ -323,6 +324,56 @@ export async function whoknowsHealthCheck(_engine: BrainEngine): Promise<Check> 
       status: 'warn',
       message: `Could not check whoknows fixture: ${msg}`,
     };
+  }
+}
+
+/**
+ * reference_flag_health: deterministic (zero-LLM) reference-flag drift audit,
+ * folded into doctor so the existing doctor crons run it. `reference: true` is a
+ * PEOPLE-only flag. Reuses `buildReferenceAuditReport` over the markdown on disk.
+ *   - FAIL: a non-person page carries a reference indicator (named in message),
+ *           OR a reference person accrued real interaction evidence (-> real).
+ *   - WARN: a person looks content-only and is a likely missed reference.
+ * Direction is determined by what each person links to and its timeline.
+ */
+export async function referenceFlagHealthCheck(engine: BrainEngine): Promise<Check> {
+  const name = 'reference_flag_health';
+  let brainDir: string | undefined;
+  try {
+    const configured = await engine.getConfig('sync.repo_path');
+    if (configured && existsSync(configured)) brainDir = configured;
+  } catch {
+    // fall through to skip
+  }
+  if (!brainDir) {
+    return { name, status: 'ok', message: 'No brain repo path configured; reference audit skipped' };
+  }
+  try {
+    const report = buildReferenceAuditReport(loadAuditPages(brainDir));
+    if (report.errors > 0) {
+      const slugs = report.issues.filter((i) => i.severity === 'error').map((i) => i.slug);
+      return {
+        name,
+        status: 'fail',
+        message: `${report.errors} reference-flag error(s): ${slugs.join(', ')}`,
+      };
+    }
+    if (report.warnings > 0) {
+      const slugs = report.issues.filter((i) => i.severity === 'warn').map((i) => i.slug);
+      return {
+        name,
+        status: 'warn',
+        message: `${report.warnings} likely-missed person reference(s): ${slugs.join(', ')}`,
+      };
+    }
+    return {
+      name,
+      status: 'ok',
+      message: `Clean — ${report.scanned.reference_people} reference people across ${report.scanned.total_pages} pages, no drift`,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { name, status: 'warn', message: `Could not run reference audit: ${msg}` };
   }
 }
 
@@ -759,6 +810,15 @@ export async function doctorReportRemote(engine: BrainEngine): Promise<DoctorRep
   // whether link density is high enough for the signal to fire
   // meaningfully. <10% inbound coverage warns; >=30% ok with metric.
   checks.push(await checkGraphSignalsCoverage(engine));
+
+  // 9a'. reference_flag_health: deterministic (zero-LLM) audit that
+  // `reference: true` stays a PEOPLE-only flag. Folds the standalone
+  // `gbrain reference audit` into doctor so the existing doctor crons cover
+  // it. FAIL = any non-person page carrying a reference indicator (named) or
+  // a reference person that accrued real interaction evidence; WARN = a
+  // likely-missed person reference (content-only). Direction is decided by
+  // what each person links to and their timeline.
+  checks.push(await referenceFlagHealthCheck(engine));
 
   // 9b. v0.37.0 brainstorm_health: surfaces three brainstorm/lsd readiness
   // signals: (a) migration v79 applied (last_retrieved_at column exists),
@@ -7176,6 +7236,10 @@ export async function buildChecks(
     // graph_signals is enabled in the active mode bundle.
     progress.heartbeat('graph_signals_coverage');
     checks.push(await checkGraphSignalsCoverage(engine));
+    // reference_flag_health — deterministic reference-flag drift audit, folded
+    // into doctor so the existing doctor crons run it (no standalone cron).
+    progress.heartbeat('reference_flag_health');
+    checks.push(await referenceFlagHealthCheck(engine));
     // v0.37.0 brainstorm_health — migration v79, track_retrieval, calibration cold-start.
     progress.heartbeat('brainstorm_health');
     checks.push(await checkBrainstormHealth(engine));

@@ -21,7 +21,7 @@ function makeCtx(engine: BrainEngine, overrides: Partial<OperationContext> = {})
 function makeEngine(existing: boolean): BrainEngine {
   return {
     getPage: async () => (existing ? ({ slug: 'people/existing' } as any) : null),
-  } as BrainEngine;
+  } as unknown as BrainEngine;
 }
 
 describe('put_page reference gate', () => {
@@ -67,6 +67,35 @@ describe('put_page reference gate', () => {
         slug: 'companies/openai',
         content: '---\ntitle: OpenAI\ntype: company\n---\n\nbody',
         entity_relationship: 'real',
+      }),
+    ).rejects.toMatchObject({
+      code: 'invalid_params',
+      docs: 'skills/conventions/reference-entities.md',
+    });
+  });
+
+  test('reference is rejected generically on any non-person page (concept/source)', async () => {
+    for (const slug of ['concepts/idea', 'sources/book', 'media/clip']) {
+      const ctx = makeCtx(makeEngine(false));
+      await expect(
+        putPage.handler(ctx, {
+          slug,
+          content: '---\ntitle: X\nreference: true\n---\n\nbody',
+        }),
+      ).rejects.toMatchObject({
+        code: 'invalid_params',
+        docs: 'skills/conventions/reference-entities.md',
+      });
+    }
+  });
+
+  test('entity_relationship is rejected generically on any non-person page', async () => {
+    const ctx = makeCtx(makeEngine(false));
+    await expect(
+      putPage.handler(ctx, {
+        slug: 'concepts/idea',
+        content: '---\ntitle: X\ntype: concept\n---\n\nbody',
+        entity_relationship: 'reference',
       }),
     ).rejects.toMatchObject({
       code: 'invalid_params',

@@ -42,7 +42,7 @@ const DIRECT_INTERACTION_LINE_RE =
 export interface ReferenceAuditIssue {
   severity: 'error' | 'warn';
   code:
-    | 'illegal_company_reference'
+    | 'illegal_reference_on_non_person'
     | 'reference_person_has_interaction'
     | 'likely_missing_person_reference';
   slug: string;
@@ -55,9 +55,7 @@ export interface ReferenceAuditReport {
   scanned: {
     total_pages: number;
     people: number;
-    companies: number;
     reference_people: number;
-    reference_companies: number;
   };
   errors: number;
   warnings: number;
@@ -209,21 +207,34 @@ export function buildReferenceAuditReport(pages: AuditPage[]): ReferenceAuditRep
 
   const issues: ReferenceAuditIssue[] = [];
   let people = 0;
-  let companies = 0;
   let referencePeople = 0;
-  let referenceCompanies = 0;
 
   for (const page of sortedPages) {
     const isPerson = isPersonSlug(page.slug);
-    const isCompany = isCompanySlug(page.slug);
-    if (!isPerson && !isCompany) continue;
 
     if (isPerson) people++;
-    if (isCompany) companies++;
 
     const isReference = hasReferenceFlag(page.content);
-    if (isReference && isPerson) referencePeople++;
-    if (isReference && isCompany) referenceCompanies++;
+
+    // reference is a people-only flag. ANY non-person page carrying a reference
+    // indicator (companies, concepts, sources, media, ...) is a violation — flag
+    // it by name. We don't track a "reference companies" count at all; the
+    // concept doesn't exist for non-people.
+    if (!isPerson && isReference) {
+      issues.push({
+        severity: 'error',
+        code: 'illegal_reference_on_non_person',
+        slug: page.slug,
+        message: 'reference is a people-only flag; this non-person page carries reference: true',
+        evidence: ['frontmatter contains reference: true'],
+      });
+      continue;
+    }
+
+    // Everything below is people-only relationship logic.
+    if (!isPerson) continue;
+
+    if (isReference) referencePeople++;
 
     const sources = [...(backlinks.get(page.slug) ?? new Set<string>())].sort();
     const interactionSources = sources.filter((s) => {
@@ -233,18 +244,7 @@ export function buildReferenceAuditReport(pages: AuditPage[]): ReferenceAuditRep
     const contentSources = sources.filter((s) => classifySourceSurface(s) === 'content');
     const interactionSignals = detectInteractionSignals(page.content);
 
-    if (isCompany && isReference) {
-      issues.push({
-        severity: 'error',
-        code: 'illegal_company_reference',
-        slug: page.slug,
-        message: 'companies cannot carry reference: true',
-        evidence: interactionSources.length > 0 ? interactionSources : ['frontmatter contains reference: true'],
-      });
-      continue;
-    }
-
-    if (isPerson && isReference && (interactionSources.length > 0 || interactionSignals.length > 0)) {
+    if (isReference && (interactionSources.length > 0 || interactionSignals.length > 0)) {
       issues.push({
         severity: 'error',
         code: 'reference_person_has_interaction',
@@ -255,7 +255,7 @@ export function buildReferenceAuditReport(pages: AuditPage[]): ReferenceAuditRep
       continue;
     }
 
-    if (isPerson && !isReference && interactionSources.length === 0 && contentSources.length > 0) {
+    if (!isReference && interactionSources.length === 0 && contentSources.length > 0) {
       issues.push({
         severity: 'warn',
         code: 'likely_missing_person_reference',
@@ -278,9 +278,7 @@ export function buildReferenceAuditReport(pages: AuditPage[]): ReferenceAuditRep
     scanned: {
       total_pages: sortedPages.length,
       people,
-      companies,
       reference_people: referencePeople,
-      reference_companies: referenceCompanies,
     },
     errors,
     warnings,
@@ -288,7 +286,7 @@ export function buildReferenceAuditReport(pages: AuditPage[]): ReferenceAuditRep
   };
 }
 
-function loadAuditPages(brainDir: string): AuditPage[] {
+export function loadAuditPages(brainDir: string): AuditPage[] {
   const pages: AuditPage[] = [];
   for (const slug of walkBrainRepo(brainDir).keys()) {
     const filePath = join(brainDir, `${slug}.md`);
@@ -300,8 +298,8 @@ function loadAuditPages(brainDir: string): AuditPage[] {
 function printAuditReport(report: ReferenceAuditReport): void {
   const headline = report.errors > 0 ? 'FAIL' : report.warnings > 0 ? 'WARN' : 'OK';
   console.log(
-    `Reference audit ${headline} — ${report.scanned.people} people, ${report.scanned.companies} companies, ` +
-    `${report.scanned.reference_people} reference people, ${report.scanned.reference_companies} reference companies`,
+    `Reference audit ${headline} — ${report.scanned.total_pages} pages, ${report.scanned.people} people, ` +
+    `${report.scanned.reference_people} reference people`,
   );
   if (report.issues.length === 0) {
     console.log('No reference drift found.');

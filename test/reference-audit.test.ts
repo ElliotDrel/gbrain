@@ -16,16 +16,34 @@ describe('extractLinkedSlugs', () => {
 });
 
 describe('buildReferenceAuditReport', () => {
-  test('flags illegal company references', () => {
+  test('flags a reference indicator on a company page (non-person)', () => {
     const report = buildReferenceAuditReport([
       { slug: 'companies/marriott', content: '---\ntype: company\nreference: true\n---\n\n# Marriott' },
     ]);
     expect(report.errors).toBe(1);
     expect(report.issues[0]).toMatchObject({
-      code: 'illegal_company_reference',
+      code: 'illegal_reference_on_non_person',
       slug: 'companies/marriott',
       severity: 'error',
     });
+    expect(report.scanned).not.toHaveProperty('reference_companies');
+  });
+
+  test('flags a reference indicator on any non-person page (concept/source/media)', () => {
+    const report = buildReferenceAuditReport([
+      { slug: 'concepts/idea', content: '---\ntype: concept\nreference: true\n---\n\n# Idea' },
+      { slug: 'sources/book', content: '---\ntype: source\nreference: true\n---\n\n# Book' },
+      { slug: 'media/clip', content: '---\ntype: media\nreference: true\n---\n\n# Clip' },
+    ]);
+    expect(report.errors).toBe(3);
+    expect(report.issues.map((i) => i.slug).sort()).toEqual([
+      'concepts/idea',
+      'media/clip',
+      'sources/book',
+    ]);
+    for (const issue of report.issues) {
+      expect(issue.code).toBe('illegal_reference_on_non_person');
+    }
   });
 
   test('flags reference people with meeting backlinks', () => {

@@ -221,10 +221,6 @@ function isPeoplePageSlug(slug: string): boolean {
   return slug.startsWith('people/');
 }
 
-function isCompanyPageSlug(slug: string): boolean {
-  return slug.startsWith('companies/');
-}
-
 function hasReferenceFrontmatter(content: string): boolean {
   return /^---\n[\s\S]*?^reference:\s*true\s*$/m.test(content);
 }
@@ -763,7 +759,7 @@ const get_page: Operation = {
 
 const put_page: Operation = {
   name: 'put_page',
-  description: 'Write/update a page (markdown with frontmatter). Chunks, embeds, reconciles tags, and (when auto_link/auto_timeline are enabled) extracts + reconciles graph links and timeline entries. `reference: true` is PEOPLE-only: NEW remote-created `people/...` pages must explicitly declare `entity_relationship=real|reference`; `reference` auto-stamps `reference: true`. `companies/...` pages must never carry the reference flag. For large content on Windows (pipe-buffer limit ~45KB) or any file-as-input workflow, use `gbrain capture --file PATH --slug SLUG` — capture reads the file as a Buffer with a binary-NUL guard and adds provenance write-through (v0.39.3.0).',
+  description: 'Write/update a page (markdown with frontmatter). Chunks, embeds, reconciles tags, and (when auto_link/auto_timeline are enabled) extracts + reconciles graph links and timeline entries. `reference: true` is PEOPLE-only: NEW remote-created `people/...` pages must explicitly declare `entity_relationship=real|reference`; `reference` auto-stamps `reference: true`. Non-people pages (companies, concepts, sources, media, ...) must never carry the reference flag. For large content on Windows (pipe-buffer limit ~45KB) or any file-as-input workflow, use `gbrain capture --file PATH --slug SLUG` — capture reads the file as a Buffer with a binary-NUL guard and adds provenance write-through (v0.39.3.0).',
   params: {
     slug: { type: 'string', required: true, description: 'Page slug' },
     content: { type: 'string', required: true, description: 'Full markdown content with YAML frontmatter' },
@@ -771,7 +767,7 @@ const put_page: Operation = {
       type: 'string',
       required: false,
       enum: ['real', 'reference'],
-      description: 'Required for REMOTE creation of NEW `people/...` pages only. Use `reference` for public/canon people the user only reads ABOUT; use `real` for people the user actually knows or can realistically interact with. `companies/...` pages must not use this field. See `skills/conventions/reference-entities.md`.',
+      description: 'Required for REMOTE creation of NEW `people/...` pages only. Use `reference` for public/canon people the user only reads ABOUT; use `real` for people the user actually knows or can realistically interact with. Non-people pages must not use this field. See `skills/conventions/reference-entities.md`.',
     },
     // v0.39.3.0 provenance write-through (WARN-8 + A1 + CV6). Optional fields
     // for trusted local callers (capture CLI, autopilot, dream cycle). Remote
@@ -849,11 +845,23 @@ const put_page: Operation = {
       }
     }
 
-    if (isCompanyPageSlug(slug) && hasReferenceFrontmatter(p.content as string)) {
+    // `reference: true` and `entity_relationship` are PEOPLE-ONLY. Any non-people
+    // page carrying either is invalid — flagged generically, never by entity
+    // class (no companies/concepts/sources special-casing).
+    if (!isPeoplePageSlug(slug) && hasReferenceFrontmatter(p.content as string)) {
       throw new OperationError(
         'invalid_params',
-        `companies cannot carry reference: true ('${slug}')`,
-        'Remove the reference flag. It applies only to people pages.',
+        `reference is a people-only flag; '${slug}' is not a people/ page`,
+        'Remove reference: true. It applies only to people pages.',
+        'skills/conventions/reference-entities.md',
+      );
+    }
+
+    if (!isPeoplePageSlug(slug) && p.entity_relationship !== undefined) {
+      throw new OperationError(
+        'invalid_params',
+        `entity_relationship is valid only on new people/ pages; '${slug}' is not one`,
+        'Drop entity_relationship. reference is a people-only concept.',
         'skills/conventions/reference-entities.md',
       );
     }
@@ -863,15 +871,6 @@ const put_page: Operation = {
         'invalid_params',
         `people page '${slug}' cannot stay reference when it contains direct interaction signals`,
         'Remove reference: true or remove the interaction evidence from the page content.',
-        'skills/conventions/reference-entities.md',
-      );
-    }
-
-    if (isCompanyPageSlug(slug) && p.entity_relationship !== undefined) {
-      throw new OperationError(
-        'invalid_params',
-        `entity_relationship is only valid for new people pages ('${slug}')`,
-        'Drop entity_relationship for companies. Companies are never reference.',
         'skills/conventions/reference-entities.md',
       );
     }

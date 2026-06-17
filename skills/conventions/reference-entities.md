@@ -9,8 +9,9 @@ incomplete with no honest fix.
 
 The `reference: true` frontmatter flag resolves this.
 
-This is intentionally **people-only**. Do not apply `reference: true` to
-`companies/...` pages.
+This is intentionally **people-only**. Do not apply `reference: true` to any
+non-people page (companies, concepts, sources, media, ...). The audit flags any
+such page by name.
 
 ## Reference decision gate (MANDATORY)
 
@@ -61,7 +62,7 @@ Do NOT set it for people Elliot actually meets, emails, is introduced to, or
 could realistically interact with through his live network. Those are normal
 entities whose missing timeline/links is a real, actionable gap.
 
-Do NOT set it for companies. Ever.
+Do NOT set it for any non-people page (companies, concepts, sources, media). Ever.
 
 ## Where this must be checked
 
@@ -80,8 +81,28 @@ run the decision gate above before writing:
 ```bash
 gbrain reference <people/slug>            # mark as reference
 gbrain reference <people/slug> --unset    # back to a normal entity
-gbrain reference audit --json             # deterministic drift audit
+gbrain reference audit --json             # deterministic drift audit (manual)
 ```
+
+## Auditing (deterministic, zero-LLM)
+
+The drift audit is folded into `gbrain doctor` as the `reference_flag_health`
+check, so it runs wherever doctor runs (e.g. the daily brain health check) — no
+separate cron. It scans **every** page on disk and reports three kinds of drift,
+each naming the offending page:
+
+- **(error) non-person reference indicator** — any non-people page (company,
+  concept, source, media, ...) carrying `reference: true`. The flag is
+  meaningless there.
+- **(error) reference person with interaction evidence** — a `reference` person
+  who should be promoted to a real contact. Decided deterministically from
+  **what links to the page** (meeting/email/call backlinks) and **the page's own
+  timeline / contact fields**.
+- **(warn) likely missed reference** — a non-reference person sourced only from
+  content pages (concepts/sources/media) with no real-world interaction
+  backlink; a likely read-about figure that should be marked reference.
+
+`gbrain reference audit` remains available for an ad-hoc check.
 
 The command writes the flag to BOTH the markdown frontmatter (durable; survives
 re-ingest / engine rebuild — markdown is the source of truth) AND the engine
@@ -100,7 +121,7 @@ explicit relationship decision:
 ```
 
 Use `"entity_relationship": "real"` for normal people. This is the runtime
-guardrail that prevents agent-side drift. `companies/...` pages must not send
+guardrail that prevents agent-side drift. Non-people pages must not send
 `entity_relationship` and must not carry `reference: true`.
 
 ## Why a flag, not a type
