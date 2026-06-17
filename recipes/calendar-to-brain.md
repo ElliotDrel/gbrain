@@ -253,7 +253,10 @@ Should return calendar pages with event details.
 This is YOUR job (the agent). For each person who appears in calendar events:
 
 1. **Check brain**: `gbrain search "attendee name"` — do they have a page?
-2. **Create page if missing**: notable attendees (appears 3+ times) get a brain page
+2. **Create page if missing**: notable attendees (appears 3+ times) get a brain
+   page, but only after the reference decision gate in
+   `skills/conventions/reference-entities.md`. Calendar attendees are usually
+   real; imported/public figures should be reference.
 3. **Update existing pages**: add meeting history to timeline:
    `- YYYY-MM-DD | Meeting: {event title} [Source: Google Calendar]`
 4. **Relationship tracking**: note meeting frequency in compiled truth:

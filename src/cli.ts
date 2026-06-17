@@ -2286,6 +2286,8 @@ TOOLS
         [--dry-run] [--json]
   publish <page.md> [--password]     Shareable HTML (strips private data, optional AES-256)
   check-backlinks <check|fix> [dir]  Find/fix missing back-links across brain
+  reference <people/slug> [--unset] Mark/unmark a person page as reference
+  reference audit [--json]          Deterministic people-reference drift audit
   lint <dir|file> [--fix]            Catch LLM artifacts, placeholder dates, bad frontmatter
   orphans [--json] [--count]         Find pages with no inbound wikilinks
   salience [--days N] [--kind P]     v0.29: pages ranked by emotional + activity salience

@@ -215,7 +215,10 @@ This is YOUR job (the agent). Read the digest. For each email:
 2. **Check the brain**: `gbrain search "sender name"` — do we have a page?
 3. **Update brain pages**: if sender has a brain page, append a timeline entry:
    `- YYYY-MM-DD | Email from {sender}: {subject} [Source: Gmail, {date}]`
-4. **Create new pages**: if sender is notable and has no page, create one
+4. **Create new pages**: if sender is notable and has no page, run the
+   reference decision gate in `skills/conventions/reference-entities.md`
+   before creating it. Email senders are usually real; imported/public
+   examples are not.
 5. **Extract action items**: if the email requires a response or action, log it
 6. **Sync**: run `gbrain sync --no-pull --no-embed` to index changes
 

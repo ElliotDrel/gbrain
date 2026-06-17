@@ -213,6 +213,46 @@ export function validateFilename(name: string): void {
   }
 }
 
+function isEntityPageSlug(slug: string): boolean {
+  return slug.startsWith('people/') || slug.startsWith('companies/');
+}
+
+function isPeoplePageSlug(slug: string): boolean {
+  return slug.startsWith('people/');
+}
+
+function isCompanyPageSlug(slug: string): boolean {
+  return slug.startsWith('companies/');
+}
+
+function hasReferenceFrontmatter(content: string): boolean {
+  return /^---\n[\s\S]*?^reference:\s*true\s*$/m.test(content);
+}
+
+function hasInteractionSignals(content: string): boolean {
+  return (
+    /^\s*-\s*\d{4}-\d{2}-\d{2}.*\b(Meeting with|Call with|Email from|Email to|Intro to|Introduced to|Met with|Met at|Coffee with|Lunch with|Dinner with|Text from|DM from)\b/im.test(content) ||
+    /^(email|phone|mobile|contact|introduced_by|intro_source|met_at|met_on|last_met|follow_up):/im.test(content)
+  );
+}
+
+function applyReferenceLine(content: string, on: boolean): string {
+  const keyLine = 'reference: true';
+  const block = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!block) {
+    if (!on) return content;
+    return `---\n${keyLine}\n---\n\n${content}`;
+  }
+  let fm = block[1];
+  const hasKey = /^reference:.*$/m.test(fm);
+  if (on) {
+    fm = hasKey ? fm.replace(/^reference:.*$/m, keyLine) : `${fm}\n${keyLine}`;
+  } else if (hasKey) {
+    fm = fm.replace(/^reference:.*$\n?/m, '');
+  }
+  return content.replace(/^---\n[\s\S]*?\n---/, () => `---\n${fm}\n---`);
+}
+
 export interface ParamDef {
   type: 'string' | 'number' | 'boolean' | 'object' | 'array';
   required?: boolean;
@@ -723,10 +763,16 @@ const get_page: Operation = {
 
 const put_page: Operation = {
   name: 'put_page',
-  description: 'Write/update a page (markdown with frontmatter). Chunks, embeds, reconciles tags, and (when auto_link/auto_timeline are enabled) extracts + reconciles graph links and timeline entries. For large content on Windows (pipe-buffer limit ~45KB) or any file-as-input workflow, use `gbrain capture --file PATH --slug SLUG` — capture reads the file as a Buffer with a binary-NUL guard and adds provenance write-through (v0.39.3.0).',
+  description: 'Write/update a page (markdown with frontmatter). Chunks, embeds, reconciles tags, and (when auto_link/auto_timeline are enabled) extracts + reconciles graph links and timeline entries. `reference: true` is PEOPLE-only: NEW remote-created `people/...` pages must explicitly declare `entity_relationship=real|reference`; `reference` auto-stamps `reference: true`. `companies/...` pages must never carry the reference flag. For large content on Windows (pipe-buffer limit ~45KB) or any file-as-input workflow, use `gbrain capture --file PATH --slug SLUG` — capture reads the file as a Buffer with a binary-NUL guard and adds provenance write-through (v0.39.3.0).',
   params: {
     slug: { type: 'string', required: true, description: 'Page slug' },
     content: { type: 'string', required: true, description: 'Full markdown content with YAML frontmatter' },
+    entity_relationship: {
+      type: 'string',
+      required: false,
+      enum: ['real', 'reference'],
+      description: 'Required for REMOTE creation of NEW `people/...` pages only. Use `reference` for public/canon people the user only reads ABOUT; use `real` for people the user actually knows or can realistically interact with. `companies/...` pages must not use this field. See `skills/conventions/reference-entities.md`.',
+    },
     // v0.39.3.0 provenance write-through (WARN-8 + A1 + CV6). Optional fields
     // for trusted local callers (capture CLI, autopilot, dream cycle). Remote
     // MCP callers (ctx.remote !== false) have their values OVERRIDDEN with
@@ -799,6 +845,60 @@ const put_page: Operation = {
         const prefix = `wiki/agents/${ctx.subagentId}/`;
         if (!slug.startsWith(prefix) || slug.length === prefix.length) {
           throw new OperationError('permission_denied', `put_page via subagent must write under '${prefix}...'`);
+        }
+      }
+    }
+
+    if (isCompanyPageSlug(slug) && hasReferenceFrontmatter(p.content as string)) {
+      throw new OperationError(
+        'invalid_params',
+        `companies cannot carry reference: true ('${slug}')`,
+        'Remove the reference flag. It applies only to people pages.',
+        'skills/conventions/reference-entities.md',
+      );
+    }
+
+    if (isPeoplePageSlug(slug) && hasReferenceFrontmatter(p.content as string) && hasInteractionSignals(p.content as string)) {
+      throw new OperationError(
+        'invalid_params',
+        `people page '${slug}' cannot stay reference when it contains direct interaction signals`,
+        'Remove reference: true or remove the interaction evidence from the page content.',
+        'skills/conventions/reference-entities.md',
+      );
+    }
+
+    if (isCompanyPageSlug(slug) && p.entity_relationship !== undefined) {
+      throw new OperationError(
+        'invalid_params',
+        `entity_relationship is only valid for new people pages ('${slug}')`,
+        'Drop entity_relationship for companies. Companies are never reference.',
+        'skills/conventions/reference-entities.md',
+      );
+    }
+
+    if (ctx.remote !== false && isEntityPageSlug(slug)) {
+      const sourceOpts = ctx.sourceId ? { sourceId: ctx.sourceId } : undefined;
+      const existing = await ctx.engine.getPage(slug, sourceOpts);
+      if (!existing && isPeoplePageSlug(slug)) {
+        const relationship = p.entity_relationship as string | undefined;
+        if (relationship !== 'real' && relationship !== 'reference') {
+          throw new OperationError(
+            'invalid_params',
+            `creating new people page '${slug}' requires entity_relationship=real|reference`,
+            'Decide whether the user actually knows this person or only reads about them, then retry.',
+            'skills/conventions/reference-entities.md',
+          );
+        }
+        if (relationship === 'real' && hasReferenceFrontmatter(p.content as string)) {
+          throw new OperationError(
+            'invalid_params',
+            `entity_relationship=real conflicts with reference: true in '${slug}'`,
+            'Either remove reference: true or set entity_relationship=reference.',
+            'skills/conventions/reference-entities.md',
+          );
+        }
+        if (relationship === 'reference') {
+          p = { ...p, content: applyReferenceLine(p.content as string, true) };
         }
       }
     }

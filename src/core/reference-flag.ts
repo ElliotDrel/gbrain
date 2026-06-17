@@ -1,11 +1,10 @@
 // Reference / canon entities.
 //
-// A page with frontmatter `reference: true` is a reference-only entity — a
-// figure or organization imported from a book / article / external source that
-// the user reads ABOUT but does not actively interact with (e.g. Andy Grove,
-// Kleiner Perkins). It keeps its real `type` (`person` / `company`), so it stays
-// fully searchable, enrichable, linkable, and edge-resolvable — NOTHING about
-// retrieval changes.
+// A page with frontmatter `reference: true` is a reference-only PERSON — a
+// public/canon figure the user reads ABOUT but does not actively interact with
+// (e.g. Andy Grove). It keeps its real `type: person`, so it stays fully
+// searchable, enrichable, linkable, and edge-resolvable — NOTHING about
+// retrieval changes. Companies are never reference.
 //
 // The ONLY behavior it opts out of is the entity *coverage* metrics
 // (`timeline_coverage`, `entity_link_coverage` + their onboard-nudge mirrors).
@@ -15,7 +14,7 @@
 // them keeps the metric honest and actionable instead of permanently red.
 //
 // Opt-in: absent / false / anything-but-true = normal entity (the default).
-// Set via `gbrain reference <slug>` (or hand-edit frontmatter).
+// Set via `gbrain reference <people/slug>` (or hand-edit frontmatter).
 
 export const REFERENCE_FRONTMATTER_KEY = 'reference';
 

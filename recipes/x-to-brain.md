@@ -276,7 +276,10 @@ hours later.
 
 Every tweet interaction can automatically create/update brain pages:
 - Mentioned person has a brain page? Append to their timeline
-- New person mentioned? Check notability gate, create page if notable
+- New person mentioned? Check notability gate, then run the reference decision
+  gate in `skills/conventions/reference-entities.md` before creating the page.
+  Public creators/founders mentioned on X are often reference entities, not
+  real contacts.
 - Article URL in tweet? Fetch and ingest via article workflow
 - Video URL in tweet? Queue for transcription pipeline
 - Images? OCR and extract text content

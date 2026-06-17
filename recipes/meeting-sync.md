@@ -209,7 +209,10 @@ This is YOUR job (the agent). For each meeting:
 2. **For each attendee**, check brain: `gbrain search "attendee name"`
    - If page exists: append timeline entry:
      `- YYYY-MM-DD | Meeting: {title}. Discussed: {key points relevant to this person} [Source: Circleback]`
-   - If no page and person is notable: create a brain page
+   - If no page and person is notable: run the reference decision gate in
+     `skills/conventions/reference-entities.md` BEFORE creating the page. Real
+     attendees are usually normal entities; public figures merely discussed are
+     usually reference.
 3. **For each company mentioned**: update company page timeline
 4. **Action items**: if the meeting has action items, ensure they're tracked
 5. **Cross-reference with calendar**: link meeting page to the calendar event

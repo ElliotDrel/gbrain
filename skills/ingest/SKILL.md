@@ -61,7 +61,9 @@ Every fact written to a brain page must carry an inline `[Source: ...]` citation
 2. **For each entity mentioned:**
    - Read the entity's page from gbrain to check if it exists
    - If exists: update compiled_truth (rewrite State section with new info, don't append)
-   - If new: check notability gate, then store the page in gbrain with the appropriate type and slug
+   - If new: check notability gate, then run the reference decision gate in
+     `skills/conventions/reference-entities.md` BEFORE storing any new
+     `people/...` page in gbrain
 3. **Append to timeline.** Add a timeline entry in gbrain for each event, with date, summary, and source citation.
 4. **Create cross-reference links.** Link entities in gbrain for every entity pair mentioned together, using the appropriate relationship type.
 5. **Back-link all entities.** Update EVERY mentioned entity's page with a back-link to this page (Iron Law).
@@ -81,8 +83,10 @@ the signal detection loop that makes the brain compound over time.
    - **If yes:** load context with `gbrain get <slug>`. Use the compiled truth to
      inform your response. Update the page if the message contains new information.
    - **If no:** assess notability (see `skills/_brain-filing-rules.md`). If the entity
-     is worth tracking, create a new page with `gbrain put <type/slug>` and populate
-     with what you know.
+     is worth tracking, STOP and run the reference gate from
+     `skills/conventions/reference-entities.md` before creating any new
+     `people/...` page from public/source material. Then create it with the
+     explicit real-vs-reference decision if needed.
 3. **After creating or updating pages:** sync to gbrain:
    ```bash
    gbrain sync --no-pull --no-embed

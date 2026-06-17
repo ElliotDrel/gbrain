@@ -50,6 +50,11 @@ writes_to:
 
 > **Filing rule:** Read `skills/_brain-filing-rules.md` before creating any new page.
 >
+> **Reference gate:** before creating any new `people/...`
+> page during attendee/entity propagation, run
+> `skills/conventions/reference-entities.md`. Meeting-born attendees are
+> usually real; public figures merely mentioned in the meeting may be reference.
+>
 > **Operating mode — boil the ocean, one checkpoint at the end.** Run the entire
 > flow autonomously — build the notes, ingest them, enrich attendees, propagate
 > entities, merge timelines, commit and push, draft the follow-up/recap, and run

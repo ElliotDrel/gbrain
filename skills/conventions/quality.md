@@ -38,3 +38,12 @@ Before creating a new brain page, check notability:
 - **Concepts:** Reusable mental model? Worth referencing again?
 
 When in doubt, DON'T create. A 400-follower person who tweeted once is not notable.
+
+## Reference Gate
+
+For every NEW `people/...` page created from public/source material, also
+decide whether the person is **real** (Elliot actually knows or can reach them)
+or **reference** (he only reads ABOUT them). If reference is plausible, stop
+and follow `skills/conventions/reference-entities.md` before writing.
+
+Do not apply `reference` logic to `companies/...` pages.

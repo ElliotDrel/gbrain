@@ -130,6 +130,12 @@ These five are load-bearing. The rest of this skill is normal directive guidance
    drift. The on-disk file is the source of truth; prefer it over the inlined copy. When you
    must verify, run a byte-diff of the body before/after (`diff` the original prose against the
    transformed file's body) and confirm it is identical.
+6. **Never create a new `people/...` page from media without an explicit
+   reference decision first.** If the entity is someone Elliot only reads ABOUT
+   in the media, mark it reference per
+   `skills/conventions/reference-entities.md`. If it is someone he actually
+   knows or deals with, keep it real. If unsure, STOP and check the convention
+   before writing. Companies are never reference.
 </hard_guardrails>
 
 ## Phase 1 -- Identify format and fetch

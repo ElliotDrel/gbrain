@@ -95,7 +95,9 @@ Extract people, companies, concepts from the incoming signal.
 For each entity:
 - `gbrain search "name"` -- does a page already exist?
 - **If yes:** UPDATE path (add new signal, update compiled truth if material)
-- **If no:** CREATE path (check notability gate first, then create)
+- **If no:** CREATE path (check notability gate first; if this is a new
+  `people/...` page from public/source material, run the reference decision
+  gate in `conventions/reference-entities.md`; then create)
 
 ### Step 3: Extract signal from source
 
@@ -165,11 +167,14 @@ the raw data shows exactly what the API returned.
 #### CREATE path
 
 1. Check notability gate (see `skills/_brain-filing-rules.md`)
-2. Check filing rules -- where does this entity go?
-3. Create page with the appropriate template (below)
-4. Fill compiled truth with citations
-5. Add first timeline entry
-6. Leave empty sections as `[No data yet]` (don't fill with boilerplate)
+2. Run the reference decision gate (see `conventions/reference-entities.md`)
+   before creating any new `people/...` page from external/public source
+   material
+3. Check filing rules -- where does this entity go?
+4. Create page with the appropriate template (below)
+5. Fill compiled truth with citations
+6. Add first timeline entry
+7. Leave empty sections as `[No data yet]` (don't fill with boilerplate)
 
 #### UPDATE path
 
@@ -273,15 +278,16 @@ Active items, pending decisions, things to track.
 
 ### Reference entities (canon figures)
 
-If the entity is someone/something the user reads ABOUT but does not personally
-interact with — a book author, a historical figure, a company discussed in an
-article — mark the page as reference: `gbrain reference <slug>` (or
-`reference: true` in frontmatter). Reference pages keep their `person`/`company`
-type and stay fully searchable, enrichable, and linkable; they are only exempt
-from the entity coverage nudges (timeline/links) that don't apply to figures
-with no dated history in the user's own life. **Default: do NOT set it** — real
-people and companies the user deals with are normal entities. Full convention:
-`conventions/reference-entities.md`.
+If the entity is a person the user reads ABOUT but does not personally
+interact with -- a book author, a historical figure, a creator discussed in an
+article -- mark the page as reference: `gbrain reference <people/slug>` (or
+`reference: true` in frontmatter). Reference pages keep their `type: person`
+and stay fully searchable, enrichable, and linkable; they are only exempt from
+the entity coverage nudges (timeline/links) that don't apply to figures with
+no dated history in Elliot's own life. **Default: do NOT set it** -- real
+people Elliot knows are normal entities. Companies are never reference. This is
+a HARD STOP before creating a new external-source person page, not an optional
+cleanup. Full convention: `conventions/reference-entities.md`.
 
 ### Step 7: Cross-reference
 

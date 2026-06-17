@@ -54,7 +54,10 @@ Format: `- YYYY-MM-DD — Referenced in [page title](path) — brief context`
 
 3. **Identify the author — MANDATORY people page.** Anyone whose thinking is worth ingesting is worth tracking.
    - Search brain for existing author page
-   - If no page → CREATE ONE with compiled truth + timeline format
+   - If no page -> STOP and run the reference decision gate in
+     `skills/conventions/reference-entities.md` before creating the author
+     page. Public authors/creators are usually reference entities unless the
+     user actually knows them.
    - If page exists → update timeline with this new publication
    - Cross-link both directions
 

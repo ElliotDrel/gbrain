@@ -60,6 +60,26 @@ Not everything deserves a brain page. Before creating a new entity page:
 - **When in doubt, DON'T create.** A missing page can be created later.
   A junk page wastes attention and degrades search quality.
 
+## Reference Gate
+
+Notability is not enough. Before creating any NEW `people/...` page from public
+or source-driven material, also decide whether it is a **real relationship
+entity** or a **reference person**.
+
+- **Real person:** someone Elliot actually knows, has met, has been introduced
+  to, or could realistically interact with through his live network.
+- **Reference person:** someone Elliot only reads ABOUT in source material --
+  authors, public figures, historical figures, creators from saved media.
+
+Hard rule:
+
+- `reference: true` applies only to `people/...` pages.
+- `companies/...` pages are never reference.
+- If a new person page is born from external source material and Elliot does
+  not actually know or interact with that person, mark it reference.
+- If you are unsure, STOP and read
+  `skills/conventions/reference-entities.md` before writing.
+
 ## Iron Law: Back-Linking (MANDATORY)
 
 Every mention of a person or company with a brain page MUST create a back-link

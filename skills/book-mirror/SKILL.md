@@ -273,13 +273,15 @@ Cross-link entities mentioned in the analysis:
 - For every person the right column references with a brain page, add a
   back-link from `people/<slug>` to the new `media/books/<slug>-personalized`
   page (per `conventions/quality.md` Iron Law).
-- **Mark book figures as reference entities.** Any NEW person/company page you
-  mint for a figure from the book (an author, a historical figure, a company
-  the book discusses) — someone the reader reads ABOUT but doesn't personally
-  interact with — should be flagged: `gbrain reference <slug>` (or
-  `reference: true` in frontmatter). They stay fully searchable/linkable but
-  are exempt from coverage nudges (timeline/links). Skip this for anyone the
-  reader actually knows. Default for normal contacts: do NOT set it.
+- **Mark book figures as reference people.** Any NEW `people/...` page you
+  mint for a figure from the book (an author, a historical figure, a creator)
+  -- someone the reader reads ABOUT but doesn't personally interact with --
+  should be flagged: `gbrain reference <people/slug>` (or `reference: true` in
+  frontmatter). They stay fully searchable/linkable but are exempt from
+  coverage nudges (timeline/links). Skip this for anyone the reader actually
+  knows. Companies are never reference. This is a hard stop, not an
+  after-the-fact cleanup. If unsure, read
+  `skills/conventions/reference-entities.md` before minting the page.
 
 ## Quality bar (the bar)
 
