@@ -251,6 +251,18 @@ instead of a parallel ad-hoc transcript fetch.
 **How to recreate:** in the audio/video section, prepend the "route social/video
 through media-ingest's Supadata path first" step and renumber the following steps.
 
+## A8. MODIFIED plugin manifest — `openclaw.plugin.json` (top-level `id`)
+**Change:** added `"id": "gbrain"` as the first key of `openclaw.plugin.json`.
+**Why:** OpenClaw's plugin-manifest schema (verified on host 2026.6.1) REQUIRES a
+top-level `id` — without it, loading gbrain as a local context-engine plugin
+(`plugins.load.paths: ["/home/supe/gbrain"]` + `plugins.slots.contextEngine:
+"gbrain-context"`) fails config validation with "plugin manifest requires id",
+which would break the gateway on restart. gbrain's stock manifest only ships
+`name`. Added 2026-06-17 to enable the push-context Retrieval Reflex deterministic
+layer in Elliot's OpenClaw. Candidate to upstream (the manifest arguably should
+carry `id` regardless).
+**How to recreate:** add `"id": "gbrain"` as the first key of `openclaw.plugin.json`.
+
 > **Conflict-free customizations (no recreate entry needed).** The `gbrain tags`
 > command (`src/commands/tags.ts` + minimal cli.ts wiring), the safe-upgrade
 > system (`src/commands/upgrade-bunlink.ts`, the `upgrade.ts` bun-link hook, the
