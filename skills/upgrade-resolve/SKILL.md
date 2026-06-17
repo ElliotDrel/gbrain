@@ -1,9 +1,11 @@
 ---
 name: upgrade-resolve
 description: |
-  Re-apply local gbrain patches after `gbrain upgrade` resolved conflicts
-  upstream-wins. Reads the backup manifest, asks the user for approval, then
-  reconstructs each patch's INTENT (from PATCH.md) onto the new upstream code.
+  Re-apply local gbrain patches across an upstream upgrade — whether via
+  `gbrain upgrade` (backup-manifest) or a manual `git rebase origin/master` of
+  the fork's patch stack. ALWAYS read PATCH.md in full FIRST (it's the map of
+  what the fork carries and why), reconstruct each patch's INTENT onto the new
+  upstream code, then refresh PATCH.md (header + entries) at the end — mandatory.
 triggers:
   - "resolve upgrade conflicts"
   - "re-apply my patches"
@@ -11,6 +13,10 @@ triggers:
   - "upgrade resolve"
   - "the upgrade had conflicts"
   - "restore my gbrain patches"
+  - "rebase gbrain onto upstream"
+  - "update gbrain fork"
+  - "upgrade the gbrain fork"
+  - "gbrain upgrade with patch stack"
 tools:
   - exec
   - read
@@ -33,8 +39,21 @@ This skill guarantees:
 - Typecheck-gated: a re-application that fails typecheck is reverted and flagged, never left broken.
 - Propagates updated skills to the live workspace and reports rollback points (backupRef + backup dir).
 
+> **Applies to BOTH upgrade flows.** Whether the upgrade ran via `gbrain
+> upgrade` (bun-link backup-manifest path, below) OR a manual
+> `git fetch && git rebase origin/master` of the fork's patch stack (the flow
+> for installs that carry a local patch series — conflicts resolved inline
+> during the rebase rather than from a backup manifest), the PATCH.md
+> read-first / refresh-last discipline in Hard rule 0 and step 5 is mandatory
+> either way.
+
 ## Hard rules
 
+0. **Read `PATCH.md` IN FULL before touching anything.** It is the map of every
+   change the fork carries on top of upstream and WHY — you cannot classify a
+   conflict (Section A vs B), know what to drop, or adapt an intent to new
+   upstream shape without it. Reading it first is what gives you context on
+   "what is going on" in this repo. Never start resolving conflicts blind.
 1. **Ask the user before changing anything.** Show what conflicted and what you
    plan to re-apply. Proceed only on explicit approval.
 2. **Re-apply INTENT, not text.** You are reconstructing what the patch was FOR
@@ -102,7 +121,10 @@ flag it, and continue with the rest.
 
 - One commit per logical patch re-applied:
   `git -C <repoRoot> add <files> && git -C <repoRoot> commit -m "patch: re-apply <subject> after upgrade <id>"`
-- Refresh the matching `PATCH.md` entries (commit message: `docs(PATCH.md): refresh after upgrade <id>`).
+- **Refresh `PATCH.md` — MANDATORY, both the header AND the entries (commit message: `docs(PATCH.md): refresh after upgrade <id>`):**
+  - **Header:** update the `Last updated: <date> (on gbrain <NEW version>)` line and write a one-paragraph audit summary for this upgrade — which versions came in, which files conflicted and how each was resolved, and which Section B entries flipped to retired. The header is the at-a-glance state of the fork; a stale header (wrong version, mislabeled entry) silently misleads the NEXT upgrade.
+  - **Entries:** mark each affected entry's `Status:` (retired/active) and refresh its intent if upstream changed the surface.
+  - Do this WITHOUT being asked — it is part of "done," not a follow-up the user has to request.
 - Leave the backup directory in place (forensics); the user can delete old ones.
 
 ### 6. Propagate updated skills to the live workspace
@@ -135,6 +157,8 @@ Then: verify-gate result (`bun run typecheck` pass/fail), workspace propagation 
 
 ## Anti-Patterns
 
+- Starting conflict resolution without reading `PATCH.md` in full first (violates Hard rule 0) — you'll misclassify Section A vs B and re-apply something upstream already fixed.
+- Leaving the `PATCH.md` HEADER stale after an upgrade (wrong `Last updated` version, mislabeled entry status) — the header is the at-a-glance fork state; a stale header misleads the next upgrade. Refreshing per-entry but not the header is the common miss.
 - Running unattended or editing any file before the user approves (violates Hard rule 1).
 - Pasting old patch text back verbatim instead of reconstructing intent on the new upstream code.
 - Re-applying a Section B bug fix that upstream already fixed -- creates two conflicting
