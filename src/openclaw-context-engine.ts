@@ -38,6 +38,13 @@ interface PluginEntry {
   id: string;
   name: string;
   description: string;
+  /**
+   * OpenClaw exclusive-slot kind. Required for the host to provide the REAL
+   * `registerContextEngine` handler (without it the api hands back a no-op, so
+   * the engine never registers and `plugins.slots.contextEngine` can't resolve
+   * it — OpenClaw 2026.6.1 contract, verified against dist/api-builder).
+   */
+  kind?: string;
   register(api: PluginApi): void;
 }
 
@@ -64,7 +71,8 @@ interface PluginCtx {
 }
 
 const entry: PluginEntry = {
-  id: 'gbrain-context-engine',
+  id: 'gbrain',
+  kind: 'context-engine',
   name: 'GBrain Context Engine',
   description: 'Deterministic temporal/spatial context injection on every turn',
 

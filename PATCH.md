@@ -251,17 +251,31 @@ instead of a parallel ad-hoc transcript fetch.
 **How to recreate:** in the audio/video section, prepend the "route social/video
 through media-ingest's Supadata path first" step and renumber the following steps.
 
-## A8. MODIFIED plugin manifest — `openclaw.plugin.json` (top-level `id`)
-**Change:** added `"id": "gbrain"` as the first key of `openclaw.plugin.json`.
-**Why:** OpenClaw's plugin-manifest schema (verified on host 2026.6.1) REQUIRES a
-top-level `id` — without it, loading gbrain as a local context-engine plugin
-(`plugins.load.paths: ["/home/supe/gbrain"]` + `plugins.slots.contextEngine:
-"gbrain-context"`) fails config validation with "plugin manifest requires id",
-which would break the gateway on restart. gbrain's stock manifest only ships
-`name`. Added 2026-06-17 to enable the push-context Retrieval Reflex deterministic
-layer in Elliot's OpenClaw. Candidate to upstream (the manifest arguably should
-carry `id` regardless).
-**How to recreate:** add `"id": "gbrain"` as the first key of `openclaw.plugin.json`.
+## A8. MODIFIED context-engine plugin — conform to OpenClaw 2026.6.1 plugin contract
+**Files:** `openclaw.plugin.json` + `src/openclaw-context-engine.ts`.
+**Change (three coordinated edits):**
+1. `openclaw.plugin.json`: add top-level `"id": "gbrain"` and `"kind": "context-engine"`.
+2. `src/openclaw-context-engine.ts`: the default-export entry now sets `id: 'gbrain'`
+   (was `'gbrain-context-engine'` — must MATCH the manifest id) and adds
+   `kind: 'context-engine'` (+ the field on the `PluginEntry` interface).
+**Why (verified against host 2026.6.1 `dist/`):**
+- Manifest needs a top-level `id` or config validation fails ("plugin manifest requires id"),
+  breaking the gateway on restart. Stock gbrain ships only `name`.
+- `kind: "context-engine"` is the GATE: `dist/api-builder` wires
+  `registerContextEngine: handlers.registerContextEngine ?? noopRegisterContextEngine`
+  — without a declared `kind`, the plugin's `register()` gets the **no-op**, so the engine
+  never registers and the plugin shows as "non-capability" (`openclaw plugins inspect`).
+- The slot value is matched against the **plugin id**, not the engine id:
+  `dist/...shouldConsiderForGatewayStartup`: `contextEngineSlotStartupPluginId === plugin.pluginId`.
+  So host config must be `plugins.slots.contextEngine: "gbrain"` (the plugin id), NOT
+  `"gbrain-context"` (the ENGINE_ID) — gbrain's own `docs/guides/push-context.md` documents the
+  engine-id value, which is wrong for the 2026.6.1 slot contract. (Host-config detail, not a
+  fork file — lives in `~/.openclaw/openclaw.json`; recorded here so the next upgrade knows.)
+Added 2026-06-17 to enable the push-context Retrieval Reflex deterministic layer. Strong
+upstream candidate (gbrain's context-engine plugin packaging is stale vs current OpenClaw).
+**How to recreate:** in `openclaw.plugin.json` add `"id": "gbrain"` + `"kind": "context-engine"`;
+in the entry default export set `id: 'gbrain'` + `kind: 'context-engine'`; set the host's
+`plugins.slots.contextEngine` to the plugin id `"gbrain"`.
 
 > **Conflict-free customizations (no recreate entry needed).** The `gbrain tags`
 > command (`src/commands/tags.ts` + minimal cli.ts wiring), the safe-upgrade
