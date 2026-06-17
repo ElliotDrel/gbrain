@@ -320,7 +320,7 @@ async function runReferenceMark(engine: BrainEngine, args: ParsedArgs): Promise<
     return;
   }
   if (!isPersonSlug(slug) && !unset) {
-    console.error('reference: the reference flag applies only to people/ pages. Companies are never reference.');
+    console.error('reference: the reference flag applies only to people/ pages.');
     setCliExitVerdict(1);
     return;
   }
@@ -341,11 +341,6 @@ async function runReferenceMark(engine: BrainEngine, args: ParsedArgs): Promise<
   }
 
   const cleanSlug = slug.replace(/\.md$/, '');
-  if (isCompanySlug(cleanSlug) && !unset) {
-    console.error('reference: companies cannot be marked reference. Remove the flag instead.');
-    setCliExitVerdict(1);
-    return;
-  }
 
   const before = readFileSync(filePath, 'utf8');
   const after = applyReferenceFrontmatter(before, !unset);
