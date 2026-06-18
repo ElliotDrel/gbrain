@@ -78,7 +78,7 @@ what the content *means*, where it belongs, and how it connects to what's alread
 > fully ingested, linked, committed, and pushed. The only hard stop before the end is a failed
 > fetch (a non-zero exit can't be ingested).
 
-## What a finished ingest looks like (the contract)
+## Contract -- what a finished ingest looks like
 
 Every ingest produces:
 
@@ -351,7 +351,7 @@ reporting back. `gbrain sync` is optional catch-up plumbing here, not the defini
 `gbrain sync` claims success while the repo is still dirty or the page is not retrievable, treat
 that as incomplete and keep going.
 
-## Output -- the one checkpoint
+## Output Format -- the one checkpoint
 
 Everything above runs autonomously, including persistence. The final summary happens only after
 engine write-through, retrieval verification, commit, and push are complete. It is the single
@@ -372,7 +372,7 @@ Then, in the same message:
   ingested, linked, committed, and pushed; there's just no `Why I Saved This`. Either way the
   page is complete, not half-done.
 
-## Anti-patterns
+## Anti-Patterns
 
 Each is paired with what to do instead.
 
