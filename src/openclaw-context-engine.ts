@@ -6,7 +6,7 @@
  * sessions lose track of the user's current time, location, and state.
  *
  * Enable in openclaw.json:
- *   plugins.slots.contextEngine: "gbrain-context"
+ *   plugins.slots.contextEngine: "gbrain"
  *
  * @module
  */

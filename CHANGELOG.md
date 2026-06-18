@@ -13321,7 +13321,7 @@ Enable it in `openclaw.json`:
 {
   "plugins": {
     "slots": {
-      "contextEngine": "gbrain-context"
+      "contextEngine": "gbrain"
     }
   }
 }
@@ -13333,7 +13333,7 @@ Then keep `memory/heartbeat-state.json` warm via the existing heartbeat cron (no
 
 `gbrain upgrade` should do this automatically. If you're on OpenClaw and want the context engine wired in:
 
-1. **Update your `openclaw.json`** to set `plugins.slots.contextEngine` to `"gbrain-context"` (snippet above).
+1. **Update your `openclaw.json`** to set `plugins.slots.contextEngine` to `"gbrain"` (snippet above).
 2. **Confirm the heartbeat is producing data:** `cat memory/heartbeat-state.json` should show `garryAwake` + `currentLocation`. If not, the engine falls back to US/Pacific + San Francisco safely.
 3. **Verify the engine loads** by checking the first system-prompt block in your next session — you should see the day-of-week + local time at the top.
 4. **No schema migration, no breaking changes.** Existing gbrain installs (CLI, MCP, HTTP) are unaffected — this is OpenClaw plugin surface only.
@@ -13343,7 +13343,7 @@ If anything misbehaves, file an issue at https://github.com/garrytan/gbrain/issu
 ### Itemized changes
 
 - `src/core/context-engine.ts` (new) — pure engine. Loads heartbeat + flights + calendar + tasks from the workspace; builds the structured `systemPromptAddition`; owns no compaction. SDK-free so it runs in `bun test` standalone.
-- `src/openclaw-context-engine.ts` (new) — plugin entry. Discovered via `package.json`'s `openclaw.extensions`. Registers `gbrain-context` against the OpenClaw context-engine contract.
+- `src/openclaw-context-engine.ts` (new) — plugin entry. Discovered via `package.json`'s `openclaw.extensions`. Exposes plugin id `gbrain` and registers engine id `gbrain-context` against the OpenClaw context-engine contract.
 - `test/context-engine.test.ts` (new, 15 cases) — engine info, Toronto timezone injection, US/Pacific fallback, messages pass-through (reference-equal), ingest no-op, quiet-hours detection, day-of-week, missing-workspace-files graceful handling, token estimation from message content, calendar `Right now`/`Coming up` rendering, stale-cache warning, all-day-event skip, generic-marker skip (`Home`/`OOO`), open-tasks injection from `ops/tasks.md`, upcoming-events cap.
 - `openclaw.plugin.json` — declares `contracts.contextEngines: ["gbrain-context"]` so the OpenClaw plugin registry knows this package provides the contract.
 - `package.json` — declares `openclaw.extensions: ["./src/openclaw-context-engine.ts"]` so the OpenClaw plugin loader discovers the entry.

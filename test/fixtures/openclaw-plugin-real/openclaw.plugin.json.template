@@ -1,7 +1,13 @@
 {
-  "id": "gbrain-context-engine",
-  "name": "GBrain Context Engine (real e2e fixture)",
+  "id": "gbrain",
+  "kind": "context-engine",
+  "name": "gbrain",
   "version": "0.0.0",
-  "description": "Test-time fixture for openclaw-loads-the-plugin e2e. Mirrors the manifest fields the real release would carry — id + configSchema are the openclaw plugin loader's minimum required surface.",
-  "configSchema": {}
+  "description": "Test-time fixture for openclaw-loads-the-plugin e2e. Mirrors the real plugin id contract and keeps the loader surface minimal.",
+  "configSchema": {},
+  "contracts": {
+    "contextEngines": [
+      "gbrain-context"
+    ]
+  }
 }
