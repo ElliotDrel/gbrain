@@ -1,7 +1,8 @@
 /**
  * Tier 2 e2e: spawn REAL openclaw, install our plugin from a built bundle of
  * `src/openclaw-context-engine.ts`, and assert the OpenClaw runtime actually
- * loads it, activates it under the plugin manifest id, accepts it as the
+ * loads it, activates it under the plugin manifest id, exposes the
+ * registered `contextEngine` id via runtime inspect, accepts it as the
  * `contextEngine` slot, and runs `plugins doctor` with zero error-level
  * diagnostics for our plugin id.
  *
@@ -18,8 +19,9 @@
  *      ship to ClawHub).
  *   2. `openclaw plugins install --link` against an isolated `--profile`
  *      directory.
- *   3. `openclaw plugins inspect <id> --json` verifies the runtime imported
- *      the entry and activated the plugin under the manifest/plugin id.
+ *   3. `openclaw plugins inspect <id> --runtime --json` verifies the live
+ *      runtime imported the entry and activated the plugin under the
+ *      manifest/plugin id.
  *   4. `openclaw config set plugins.slots.contextEngine gbrain` →
  *      `openclaw config validate` confirms the slot binding is accepted.
  *   5. `openclaw plugins doctor` surfaces zero error-level diagnostics for
@@ -78,6 +80,14 @@ function runOpenclaw(args: string[], opts: { timeoutMs?: number } = {}): {
     stdout: r.stdout ?? '',
     stderr: r.stderr ?? '',
   };
+}
+
+function inspectRuntimePlugin() {
+  const result = runOpenclaw(['plugins', 'inspect', PLUGIN_ID, '--runtime', '--json'], {
+    timeoutMs: 30_000,
+  });
+  expect(result.exitCode).toBe(0);
+  return JSON.parse(result.stdout);
 }
 
 function cleanup() {
@@ -166,14 +176,13 @@ describe('openclaw-plugin-load-real (Tier 2 e2e)', () => {
   it.skipIf(SKIP)(
     'openclaw imports the entry file and reports status=loaded',
     () => {
-      const r = runOpenclaw(['plugins', 'inspect', PLUGIN_ID, '--json'], { timeoutMs: 30_000 });
-      expect(r.exitCode).toBe(0);
-
-      const inspect = JSON.parse(r.stdout);
+      const inspect = inspectRuntimePlugin();
       expect(inspect.plugin).toBeDefined();
-      // status=loaded + activated means the runtime accepted the plugin under
-      // the selected slot without surfacing a loader failure.
+      // --runtime forces a live registry load, so status/imported/registered
+      // fields reflect the actual plugin entry execution rather than install
+      // snapshot metadata.
       expect(inspect.plugin.status).toBe('loaded');
+      expect(inspect.plugin.imported).toBe(true);
       expect(inspect.plugin.activated).toBe(true);
     },
   );
@@ -181,13 +190,12 @@ describe('openclaw-plugin-load-real (Tier 2 e2e)', () => {
   it.skipIf(SKIP)(
     'runtime registry keeps the plugin loaded under the manifest id',
     () => {
-      const r = runOpenclaw(['plugins', 'inspect', PLUGIN_ID, '--json'], { timeoutMs: 30_000 });
-      expect(r.exitCode).toBe(0);
-      const inspect = JSON.parse(r.stdout);
+      const inspect = inspectRuntimePlugin();
 
-      // The real runtime registry is keyed off the manifest/plugin id. The
-      // default-export shape itself is covered by the lighter plugin-entry test.
+      // Runtime inspect should expose both the manifest/plugin id and the
+      // registered engine id when the entry loaded successfully.
       expect(inspect.plugin.id).toBe(PLUGIN_ID);
+      expect(inspect.plugin.contextEngineIds).toContain(ENGINE_ID);
       expect(inspect.plugin.status).toBe('loaded');
       expect(inspect.plugin.activated).toBe(true);
     },
@@ -196,9 +204,7 @@ describe('openclaw-plugin-load-real (Tier 2 e2e)', () => {
   it.skipIf(SKIP)(
     'register(api) ran without producing error-level diagnostics',
     () => {
-      const r = runOpenclaw(['plugins', 'inspect', PLUGIN_ID, '--json'], { timeoutMs: 30_000 });
-      expect(r.exitCode).toBe(0);
-      const inspect = JSON.parse(r.stdout);
+      const inspect = inspectRuntimePlugin();
 
       const errors = (inspect.diagnostics ?? []).filter((d: { level: string }) => d.level === 'error');
       expect(errors).toEqual([]);
