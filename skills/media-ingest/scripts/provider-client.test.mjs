@@ -160,7 +160,7 @@ test('normalizeThreadReaderTranscript extracts the full ordered x thread', () =>
   assert.match(normalized.text, /First point\.\n\nSecond point & payoff\./);
 });
 
-test('shouldFallbackToSupadata only triggers for long failed videos when a key exists', () => {
+test('shouldFallbackToSupadata triggers for any failed transcript when a key exists', () => {
   assert.equal(shouldFallbackToSupadata({
     durationSeconds: 147,
     transcriptState: 'error',
@@ -171,7 +171,7 @@ test('shouldFallbackToSupadata only triggers for long failed videos when a key e
     durationSeconds: 112,
     transcriptState: 'error',
     supadataApiKey: 'secret',
-  }), false);
+  }), true);
 
   assert.equal(shouldFallbackToSupadata({
     durationSeconds: 147,
@@ -186,7 +186,7 @@ test('shouldFallbackToSupadata only triggers for long failed videos when a key e
   }), false);
 });
 
-test('getTranscript falls back to Supadata only after ScrapeCreators fails on a long video', async () => {
+test('getTranscript falls back to Supadata after ScrapeCreators fails on a short video too', async () => {
   const originalFetch = global.fetch;
   const calls = [];
   global.fetch = async (url) => {
@@ -213,7 +213,7 @@ test('getTranscript falls back to Supadata only after ScrapeCreators fails on a 
       { scrapeCreatorsApiKey: 'scrape', supadataApiKey: 'supadata' },
       'instagram',
       'https://www.instagram.com/reel/example/',
-      { durationSeconds: 147 },
+      { durationSeconds: 100 },
     );
 
     assert.equal(result.provider, 'supadata');

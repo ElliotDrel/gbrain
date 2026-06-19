@@ -497,7 +497,8 @@ async function getSupadataTranscript(apiKey, url) {
 }
 
 function shouldFallbackToSupadata({ durationSeconds, transcriptState, supadataApiKey }) {
-  return Number.isFinite(durationSeconds) && durationSeconds > 120 && transcriptState === 'error' && !!supadataApiKey;
+  void durationSeconds;
+  return transcriptState === 'error' && !!supadataApiKey;
 }
 
 function platformName(platform) {
@@ -556,7 +557,8 @@ export async function getTranscript(apiKeys, platform, url, { durationSeconds = 
     transcriptState: 'error',
     supadataApiKey: apiKeys.supadataApiKey,
   })) {
-    console.error(`[social-fetch] ScrapeCreators transcript failed for ${Math.round(durationSeconds)}s video; trying Supadata fallback.`);
+    const durationNote = Number.isFinite(durationSeconds) ? ` for ${Math.round(durationSeconds)}s video` : '';
+    console.error(`[social-fetch] ScrapeCreators transcript failed${durationNote}; trying Supadata fallback.`);
     const fallback = await getSupadataTranscript(apiKeys.supadataApiKey, url);
     if (fallback.state === 'error') {
       return {
@@ -570,7 +572,7 @@ export async function getTranscript(apiKeys, platform, url, { durationSeconds = 
     };
   }
 
-  const suffix = Number.isFinite(durationSeconds) && durationSeconds > 120 && !apiKeys.supadataApiKey
+  const suffix = !apiKeys.supadataApiKey
     ? '; Supadata fallback unavailable (no SUPADATA_API_KEY)'
     : '';
   return { state: 'error', text: '', segments: [], error: `${scrapeError}${suffix}`, provider: 'scrapecreators', fallbackUsed: false };
