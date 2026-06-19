@@ -22,10 +22,10 @@ function parseDotEnvValue(rawValue) {
   // Now that the file is authoritative we must parse it carefully — a malformed
   // file value would otherwise silently override a correct env fallback.
   let value = rawValue.trim();
-  const q = value[0];
-  if (value.length >= 2 && (q === '"' || q === "'") && value[value.length - 1] === q) {
+  const quoted = value.match(/^(['"])(.*)\1(?:\s+#.*)?$/);
+  if (quoted) {
     // Quoted: take the contents verbatim (a '#' inside quotes is part of the key).
-    return value.slice(1, -1);
+    return quoted[2];
   }
   // Unquoted: strip a trailing inline comment ( whitespace then '#...' ).
   value = value.replace(/\s+#.*$/, '').trim();

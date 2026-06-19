@@ -1,72 +1,94 @@
-#!/usr/bin/env node
-// Regression tests for provider-keys.mjs precedence + .env parsing.
-// Self-contained: every case uses a synthetic $HOME, no live keys required.
-// Run: node provider-keys.test.mjs   (exit 0 = all pass)
-//
-// Guards the 2026-06-19 SCRAPE_CREATORS_API_KEY incident fixes:
-//   - file (~/.openclaw/.env) is authoritative; env is fallback only
-//   - WARN on file/env disagreement (no secret in the message)
-//   - .env parsing strips inline comments / honors quotes / `export` / spaces
-
-import cp from 'node:child_process';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const SCRIPT = path.join(path.dirname(new URL(import.meta.url).pathname), 'provider-keys.mjs');
-let pass = 0, fail = 0;
-const ok = (c, msg) => { (c ? pass++ : fail++); console.log(`  [${c ? 'PASS' : 'FAIL'}] ${msg}`); };
+const scriptPath = fileURLToPath(new URL('./provider-keys.mjs', import.meta.url));
 
-function run({ envFile = null, env = {} } = {}) {
-  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'pk-'));
-  fs.mkdirSync(path.join(h, '.openclaw'), { recursive: true });
-  if (envFile !== null) fs.writeFileSync(path.join(h, '.openclaw', '.env'), envFile);
-  const base = { ...process.env };
-  delete base.SCRAPECREATORS_API_KEY;
-  delete base.SCRAPE_CREATORS_API_KEY;
-  const r = cp.spawnSync(process.execPath, [SCRIPT], {
-    env: { ...base, HOME: h, ...env }, encoding: 'utf8',
+function runProviderKeys({ dotEnv = '', openclawJson = null, env = {} } = {}) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'provider-keys-'));
+  const openclawDir = path.join(home, '.openclaw');
+  fs.mkdirSync(openclawDir, { recursive: true });
+  if (dotEnv !== null) {
+    fs.writeFileSync(path.join(openclawDir, '.env'), dotEnv);
+  }
+  if (openclawJson !== null) {
+    fs.writeFileSync(
+      path.join(openclawDir, 'openclaw.json'),
+      JSON.stringify(openclawJson),
+    );
+  }
+  const result = spawnSync(process.execPath, [scriptPath], {
+    env: {
+      ...process.env,
+      HOME: home,
+      SCRAPECREATORS_API_KEY: '',
+      SCRAPE_CREATORS_API_KEY: '',
+      ...env,
+    },
+    encoding: 'utf8',
   });
-  return { out: r.stdout ? JSON.parse(r.stdout) : null, err: (r.stderr || '').trim(), code: r.status };
+  fs.rmSync(home, { recursive: true, force: true });
+  return result;
 }
 
-let r;
-console.log('=== file-only -> file value, no warn ===');
-r = run({ envFile: 'SCRAPECREATORS_API_KEY=filekey\n' });
-ok(r.out?.scrapeCreatorsApiKey === 'filekey' && !/WARN/.test(r.err), 'file used, no warn');
+test('.env value is authoritative when it conflicts with env', () => {
+  const result = runProviderKeys({
+    dotEnv: 'SCRAPECREATORS_API_KEY=file-key\n',
+    env: { SCRAPECREATORS_API_KEY: 'env-key' },
+  });
 
-console.log('=== conflict -> file wins + WARN, no secret leaked ===');
-r = run({ envFile: 'SCRAPECREATORS_API_KEY=filekey\n', env: { SCRAPE_CREATORS_API_KEY: 'staleorphan' } });
-ok(r.out?.scrapeCreatorsApiKey === 'filekey', 'file beats orphan env');
-ok(/WARN/.test(r.err) && !/filekey|staleorphan/.test(r.err), 'WARN fired without leaking either key');
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /Using the \.env value/);
+  assert.equal(JSON.parse(result.stdout).scrapeCreatorsApiKey, 'file-key');
+});
 
-console.log('=== same value -> no false-positive warn ===');
-r = run({ envFile: 'SCRAPECREATORS_API_KEY=samekey\n', env: { SCRAPECREATORS_API_KEY: 'samekey' } });
-ok(!/WARN/.test(r.err), 'no warn when equal');
+test('env fallback works when .env is silent', () => {
+  const result = runProviderKeys({
+    dotEnv: '# no scrapecreators key here\n',
+    env: { SCRAPECREATORS_API_KEY: 'env-key' },
+  });
 
-console.log('=== env fallback when file silent ===');
-r = run({ envFile: '', env: { SCRAPECREATORS_API_KEY: 'envkey' } });
-ok(r.out?.scrapeCreatorsApiKey === 'envkey' && !/WARN/.test(r.err), 'env used as fallback');
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, '');
+  assert.equal(JSON.parse(result.stdout).scrapeCreatorsApiKey, 'env-key');
+});
 
-console.log('=== nothing -> exit 2 ===');
-r = run({ envFile: '' });
-ok(r.code === 2, `exit 2 (got ${r.code})`);
+test('unquoted inline comments are stripped from .env values', () => {
+  const result = runProviderKeys({
+    dotEnv: 'SCRAPECREATORS_API_KEY=file-key # rotated 2026-06-19\n',
+  });
 
-console.log('=== inline comment stripped (unquoted) ===');
-r = run({ envFile: 'SCRAPECREATORS_API_KEY=realkey123 # rotated 2026-06-19\n' });
-ok(r.out?.scrapeCreatorsApiKey === 'realkey123', `got "${r.out?.scrapeCreatorsApiKey}"`);
+  assert.equal(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).scrapeCreatorsApiKey, 'file-key');
+});
 
-console.log('=== # preserved inside quotes ===');
-r = run({ envFile: 'SCRAPECREATORS_API_KEY="ab#cd123"\n' });
-ok(r.out?.scrapeCreatorsApiKey === 'ab#cd123', `got "${r.out?.scrapeCreatorsApiKey}"`);
+test('export prefix and whitespace around equals are accepted', () => {
+  const result = runProviderKeys({
+    dotEnv: 'export SCRAPECREATORS_API_KEY = spaced-key\n',
+  });
 
-console.log('=== export prefix + spaces around = ===');
-r = run({ envFile: 'export SCRAPECREATORS_API_KEY = spacedkey \n' });
-ok(r.out?.scrapeCreatorsApiKey === 'spacedkey', `got "${r.out?.scrapeCreatorsApiKey}"`);
+  assert.equal(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).scrapeCreatorsApiKey, 'spaced-key');
+});
 
-console.log('=== underscore legacy name still readable from file ===');
-r = run({ envFile: 'SCRAPE_CREATORS_API_KEY=legacyname\n' });
-ok(r.out?.scrapeCreatorsApiKey === 'legacyname', `got "${r.out?.scrapeCreatorsApiKey}"`);
+test('quoted values keep embedded hashes and ignore trailing comments', () => {
+  const result = runProviderKeys({
+    dotEnv: 'SCRAPECREATORS_API_KEY="abc#123" # keep hash\n',
+  });
 
-console.log(`\n${fail === 0 ? 'ALL GREEN' : 'FAILURES'}: ${pass} passed, ${fail} failed`);
-process.exit(fail === 0 ? 0 : 1);
+  assert.equal(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).scrapeCreatorsApiKey, 'abc#123');
+});
+
+test('missing key exits with code 2', () => {
+  const result = runProviderKeys({
+    dotEnv: '# empty\n',
+  });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /No SCRAPECREATORS_API_KEY/);
+});
