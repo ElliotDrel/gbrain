@@ -4,6 +4,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { resetPgliteState } from './helpers/reset-pglite.ts';
+import { withEnv } from './helpers/with-env.ts';
 import {
   __setChatTransportForTests,
   configureGateway,
@@ -13,6 +14,10 @@ import { hybridSearch } from '../src/core/search/hybrid.ts';
 
 let engine: PGLiteEngine;
 const origFetch = globalThis.fetch;
+const TEXT_EMBED_ENV = {
+  GBRAIN_EMBEDDING_MODEL: 'openai:text-embedding-3-large',
+  GBRAIN_EMBEDDING_DIMENSIONS: '1536',
+} as const;
 
 beforeAll(async () => {
   engine = new PGLiteEngine();
@@ -54,70 +59,86 @@ afterEach(() => {
 
 describe('hybridSearch LLM intent escalation gate (Commit 4)', () => {
   test('flag OFF + ambiguous query → no LLM call (default behavior)', async () => {
-    let chatCalled = 0;
-    __setChatTransportForTests(async () => {
-      chatCalled++;
-      return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      let chatCalled = 0;
+      __setChatTransportForTests(async () => {
+        chatCalled++;
+        return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+      });
+      await hybridSearch(engine, 'the chart', { limit: 5 });
+      expect(chatCalled).toBe(0);
     });
-    // Flag NOT set → default false.
-    await hybridSearch(engine, 'the chart', { limit: 5 });
-    expect(chatCalled).toBe(0);
   });
 
   test('flag ON + ambiguous query → ONE LLM call', async () => {
-    await engine.setConfig('search.cross_modal.llm_intent', 'true');
-    let chatCalled = 0;
-    __setChatTransportForTests(async () => {
-      chatCalled++;
-      return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      await engine.setConfig('search.cross_modal.llm_intent', 'true');
+      await engine.putPage('ambiguous/text-hit', {
+        type: 'note',
+        title: 'Ambiguous Text Hit',
+        compiled_truth: 'the chart lives only in text',
+      });
+      await engine.upsertChunks('ambiguous/text-hit', [
+        { chunk_index: 0, chunk_text: 'the chart lives only in text', chunk_source: 'compiled_truth' },
+      ]);
+      let chatCalled = 0;
+      __setChatTransportForTests(async () => {
+        chatCalled++;
+        return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+      });
+      const results = await hybridSearch(engine, 'the chart', { limit: 5 });
+      expect(chatCalled).toBe(1);
+      expect(results).toEqual([]);
     });
-    await hybridSearch(engine, 'the chart', { limit: 5 });
-    expect(chatCalled).toBe(1);
   });
 
   test('flag ON + unambiguous text query → no LLM call', async () => {
-    await engine.setConfig('search.cross_modal.llm_intent', 'true');
-    let chatCalled = 0;
-    __setChatTransportForTests(async () => {
-      chatCalled++;
-      return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      await engine.setConfig('search.cross_modal.llm_intent', 'true');
+      let chatCalled = 0;
+      __setChatTransportForTests(async () => {
+        chatCalled++;
+        return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+      });
+      await hybridSearch(engine, 'what is founder mode', { limit: 5 });
+      expect(chatCalled).toBe(0);
     });
-    await hybridSearch(engine, 'what is founder mode', { limit: 5 });
-    expect(chatCalled).toBe(0);
   });
 
   test('flag ON + regex-confident image query → no LLM call (regex already classified)', async () => {
-    await engine.setConfig('search.cross_modal.llm_intent', 'true');
-    let chatCalled = 0;
-    __setChatTransportForTests(async () => {
-      chatCalled++;
-      return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      await engine.setConfig('search.cross_modal.llm_intent', 'true');
+      let chatCalled = 0;
+      __setChatTransportForTests(async () => {
+        chatCalled++;
+        return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+      });
+      await hybridSearch(engine, 'show me photos from the hackathon', { limit: 5 });
+      expect(chatCalled).toBe(0);
     });
-    // Strong regex match: "show me photos from X" → already image.
-    await hybridSearch(engine, 'show me photos from the hackathon', { limit: 5 });
-    // No tie-break needed when regex is already confident.
-    expect(chatCalled).toBe(0);
   });
 
   test('flag ON + explicit crossModal opt → no LLM call (per-call opt wins)', async () => {
-    await engine.setConfig('search.cross_modal.llm_intent', 'true');
-    let chatCalled = 0;
-    __setChatTransportForTests(async () => {
-      chatCalled++;
-      return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      await engine.setConfig('search.cross_modal.llm_intent', 'true');
+      let chatCalled = 0;
+      __setChatTransportForTests(async () => {
+        chatCalled++;
+        return { text: 'image', blocks: [], stopReason: 'end', usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0 }, model: 'x', providerId: 'x' };
+      });
+      await hybridSearch(engine, 'the chart', { crossModal: 'text', limit: 5 });
+      expect(chatCalled).toBe(0);
     });
-    // Caller passed explicit crossModal — no need to tie-break.
-    await hybridSearch(engine, 'the chart', { crossModal: 'text', limit: 5 });
-    expect(chatCalled).toBe(0);
   });
 
   test('flag ON + ambiguous + LLM throws → falls back to regex result (text)', async () => {
-    await engine.setConfig('search.cross_modal.llm_intent', 'true');
-    __setChatTransportForTests(async () => {
-      throw new Error('LLM unavailable');
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      await engine.setConfig('search.cross_modal.llm_intent', 'true');
+      __setChatTransportForTests(async () => {
+        throw new Error('LLM unavailable');
+      });
+      const results = await hybridSearch(engine, 'the chart', { limit: 5 });
+      expect(Array.isArray(results)).toBe(true);
     });
-    // Should not throw — fail-open to regex result.
-    const results = await hybridSearch(engine, 'the chart', { limit: 5 });
-    expect(Array.isArray(results)).toBe(true);
   });
 });

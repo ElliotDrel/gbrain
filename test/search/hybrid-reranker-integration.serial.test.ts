@@ -25,13 +25,18 @@ import {
   resetGateway,
   __setEmbedTransportForTests,
 } from '../../src/core/ai/gateway.ts';
+import { withEnv } from '../helpers/with-env.ts';
 import type { PageInput, SearchOpts } from '../../src/core/types.ts';
 import type { RerankInput, RerankResult } from '../../src/core/ai/gateway.ts';
 
 let engine: PGLiteEngine;
 
-const DIMS = 1536; // gateway default embedding dim
+const DIMS = 1536;
 const FAKE_EMB = Array.from({ length: DIMS }, (_, j) => (j === 0 ? 1 : 0.01));
+const TEXT_EMBED_ENV = {
+  GBRAIN_EMBEDDING_MODEL: 'openai:text-embedding-3-large',
+  GBRAIN_EMBEDDING_DIMENSIONS: String(DIMS),
+} as const;
 
 function stubEmbeddings(): void {
   __setEmbedTransportForTests(async (args: any) => ({
@@ -89,142 +94,137 @@ afterAll(async () => {
 
 describe('hybridSearch — reranker disabled (pass-through)', () => {
   test('opts.reranker undefined: reranker does NOT fire', async () => {
-    let called = 0;
-    const opts: SearchOpts = {
-      limit: 10,
-      reranker: {
-        enabled: false,
-        topNIn: 30,
-        topNOut: null,
-        rerankerFn: async () => { called++; return []; },
-      },
-    };
-    const out = await hybridSearch(engine, 'alpha', opts);
-    expect(out.length).toBeGreaterThan(0);
-    expect(called).toBe(0);
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      let called = 0;
+      const opts: SearchOpts = {
+        limit: 10,
+        reranker: {
+          enabled: false,
+          topNIn: 30,
+          topNOut: null,
+          rerankerFn: async () => { called++; return []; },
+        },
+      };
+      const out = await hybridSearch(engine, 'alpha', opts);
+      expect(out.length).toBeGreaterThan(0);
+      expect(called).toBe(0);
+    });
   });
 });
 
 describe('hybridSearch — reranker enabled (reorder)', () => {
   test('rerankerFn receives a non-empty document list', async () => {
-    let receivedDocs: string[] = [];
-    const opts: SearchOpts = {
-      limit: 10,
-      reranker: {
-        enabled: true,
-        topNIn: 30,
-        topNOut: null,
-        rerankerFn: async (input: RerankInput): Promise<RerankResult[]> => {
-          receivedDocs = input.documents;
-          return input.documents.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      let receivedDocs: string[] = [];
+      const opts: SearchOpts = {
+        limit: 10,
+        reranker: {
+          enabled: true,
+          topNIn: 30,
+          topNOut: null,
+          rerankerFn: async (input: RerankInput): Promise<RerankResult[]> => {
+            receivedDocs = input.documents;
+            return input.documents.map((_, i) => ({ index: i, relevanceScore: 1 - i * 0.1 }));
+          },
         },
-      },
-    };
-    const out = await hybridSearch(engine, 'alpha keyword', opts);
-    expect(out.length).toBeGreaterThan(0);
-    expect(receivedDocs.length).toBeGreaterThan(0);
-    expect(receivedDocs.length).toBe(out.length); // when topNIn >= pool, all sent
+      };
+      const out = await hybridSearch(engine, 'alpha keyword', opts);
+      expect(out.length).toBeGreaterThan(0);
+      expect(receivedDocs.length).toBeGreaterThan(0);
+      expect(receivedDocs.length).toBe(out.length);
+    });
   });
 
   test('rerankerFn output controls final order (reverse the RRF order)', async () => {
-    let originalOrder: string[] = [];
-    const opts: SearchOpts = {
-      limit: 10,
-      reranker: {
-        enabled: true,
-        topNIn: 30,
-        topNOut: null,
-        // Reverse the order: last-in becomes first-out.
-        rerankerFn: async (input: RerankInput): Promise<RerankResult[]> => {
-          return input.documents.map((_, i) => ({
-            index: input.documents.length - 1 - i,
-            relevanceScore: 1 - i * 0.1,
-          }));
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      let originalOrder: string[] = [];
+      const opts: SearchOpts = {
+        limit: 10,
+        reranker: {
+          enabled: true,
+          topNIn: 30,
+          topNOut: null,
+          rerankerFn: async (input: RerankInput): Promise<RerankResult[]> => {
+            return input.documents.map((_, i) => ({
+              index: input.documents.length - 1 - i,
+              relevanceScore: 1 - i * 0.1,
+            }));
+          },
         },
-      },
-    };
-    // First run: collect the original RRF order (rerankerFn off).
-    const baseline = await hybridSearch(engine, 'alpha keyword', {
-      ...opts,
-      reranker: { ...opts.reranker!, enabled: false },
+      };
+      const baseline = await hybridSearch(engine, 'alpha keyword', {
+        ...opts,
+        reranker: { ...opts.reranker!, enabled: false },
+      });
+      originalOrder = baseline.map(r => r.slug);
+
+      const reranked = await hybridSearch(engine, 'alpha keyword', opts);
+      const rerankedOrder = reranked.map(r => r.slug);
+
+      expect(rerankedOrder).toEqual([...originalOrder].reverse());
     });
-    originalOrder = baseline.map(r => r.slug);
-
-    // Second run: reranker reverses.
-    const reranked = await hybridSearch(engine, 'alpha keyword', opts);
-    const rerankedOrder = reranked.map(r => r.slug);
-
-    expect(rerankedOrder).toEqual([...originalOrder].reverse());
   });
 
   test('un-reranked tail preserves RRF order (topNIn=2 with N candidates)', async () => {
-    // First baseline. PGLite's hybrid path + dedup may collapse some
-    // chunks; we need at least 3 candidates (2 reranked head + 1
-    // preserved tail) for this assertion to be meaningful.
-    const baseline = await hybridSearch(engine, 'alpha keyword', { limit: 10 });
-    const baselineOrder = baseline.map(r => r.slug);
-    expect(baselineOrder.length).toBeGreaterThanOrEqual(3);
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      const baseline = await hybridSearch(engine, 'alpha keyword', { limit: 10 });
+      const baselineOrder = baseline.map(r => r.slug);
+      expect(baselineOrder.length).toBeGreaterThanOrEqual(3);
 
-    // Now rerank only the top 2 (swap them); the tail (indices 2..N-1)
-    // must keep its baseline order.
-    // v0.42.3.0: autocut is default-ON in balanced mode and would cut this
-    // artificial 2-item scored head (0.99 vs 0.5 is a cliff) down to 1,
-    // dropping the un-scored tail. This test isolates RERANKER tail mechanics,
-    // so disable autocut here — in real balanced mode top_n_in = searchLimit
-    // (D4), so topNIn < pool with an un-scored tail never happens by default.
-    const reranked = await hybridSearch(engine, 'alpha keyword', {
-      limit: 10,
-      autocut: false,
-      reranker: {
-        enabled: true,
-        topNIn: 2,
-        topNOut: null,
-        rerankerFn: async (input: RerankInput): Promise<RerankResult[]> => [
-          { index: 1, relevanceScore: 0.99 },
-          { index: 0, relevanceScore: 0.5 },
-        ],
-      },
+      const reranked = await hybridSearch(engine, 'alpha keyword', {
+        limit: 10,
+        autocut: false,
+        reranker: {
+          enabled: true,
+          topNIn: 2,
+          topNOut: null,
+          rerankerFn: async (): Promise<RerankResult[]> => [
+            { index: 1, relevanceScore: 0.99 },
+            { index: 0, relevanceScore: 0.5 },
+          ],
+        },
+      });
+      const rerankedOrder = reranked.map(r => r.slug);
+
+      expect(rerankedOrder[0]).toBe(baselineOrder[1]);
+      expect(rerankedOrder[1]).toBe(baselineOrder[0]);
+      expect(rerankedOrder.slice(2)).toEqual(baselineOrder.slice(2));
     });
-    const rerankedOrder = reranked.map(r => r.slug);
-
-    // Head reordered: positions 0 and 1 swapped.
-    expect(rerankedOrder[0]).toBe(baselineOrder[1]);
-    expect(rerankedOrder[1]).toBe(baselineOrder[0]);
-    // Tail unchanged.
-    expect(rerankedOrder.slice(2)).toEqual(baselineOrder.slice(2));
   });
 
   test('rerank score stamps onto results', async () => {
-    const opts: SearchOpts = {
-      limit: 10,
-      reranker: {
-        enabled: true,
-        topNIn: 30,
-        topNOut: null,
-        rerankerFn: async (input: RerankInput): Promise<RerankResult[]> =>
-          input.documents.map((_, i) => ({ index: i, relevanceScore: 0.5 - i * 0.05 })),
-      },
-    };
-    const out = await hybridSearch(engine, 'alpha keyword', opts);
-    expect(out.length).toBeGreaterThan(0);
-    // First result has the highest reranker score (0.5).
-    expect((out[0] as any).rerank_score).toBe(0.5);
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      const opts: SearchOpts = {
+        limit: 10,
+        reranker: {
+          enabled: true,
+          topNIn: 30,
+          topNOut: null,
+          rerankerFn: async (input: RerankInput): Promise<RerankResult[]> =>
+            input.documents.map((_, i) => ({ index: i, relevanceScore: 0.5 - i * 0.05 })),
+        },
+      };
+      const out = await hybridSearch(engine, 'alpha keyword', opts);
+      expect(out.length).toBeGreaterThan(0);
+      expect((out[0] as any).rerank_score).toBe(0.5);
+    });
   });
 });
 
 describe('hybridSearch — fail-open contract end-to-end', () => {
   test('rerankerFn throws → results still come back (RRF order preserved)', async () => {
-    const baseline = await hybridSearch(engine, 'alpha keyword', { limit: 10 });
-    const reranked = await hybridSearch(engine, 'alpha keyword', {
-      limit: 10,
-      reranker: {
-        enabled: true,
-        topNIn: 30,
-        topNOut: null,
-        rerankerFn: async () => { throw new Error('upstream down'); },
-      },
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      const baseline = await hybridSearch(engine, 'alpha keyword', { limit: 10 });
+      const reranked = await hybridSearch(engine, 'alpha keyword', {
+        limit: 10,
+        reranker: {
+          enabled: true,
+          topNIn: 30,
+          topNOut: null,
+          rerankerFn: async () => { throw new Error('upstream down'); },
+        },
+      });
+      expect(reranked.map(r => r.slug)).toEqual(baseline.map(r => r.slug));
     });
-    // Same items, same order — applyReranker fail-open.
-    expect(reranked.map(r => r.slug)).toEqual(baseline.map(r => r.slug));
   });
 });

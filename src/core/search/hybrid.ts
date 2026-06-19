@@ -915,23 +915,6 @@ export async function hybridSearch(
     console.error(`[search-debug] auto-detail=${detail} for query="${query}"`);
   }
 
-  // Run keyword search (always available, no API key needed).
-  //
-  // v0.36 cross-modal (D9): skip keyword for 'image'-only modality. Image
-  // chunks may have OCR text in chunk_text, but a text-only keyword scan
-  // would also surface every text chunk containing the query phrase —
-  // not what an image-intent query asked for. Image vector search is the
-  // canonical channel for image-modality queries.
-  //
-  // We classify modality early (it's also computed after for the modality
-  // branch). The classification is pure regex via classifyQuery; running it
-  // here is cheap.
-  const earlyModality = (opts?.crossModal && opts.crossModal !== 'auto')
-    ? opts.crossModal
-    : (suggestions.suggestedModality ?? 'text');
-  const keywordResults: SearchResult[] =
-    earlyModality === 'image' ? [] : await engine.searchKeyword(query, searchOpts);
-
   // v0.29.1: resolve salience/recency from caller (back-compat aliases for
   // PR #618's `recencyBoost` numeric scale) or fall back to the heuristic.
   // The wrapper fires from ALL THREE return paths (codex pass-1 #2 + pass-2 #4).
@@ -987,8 +970,16 @@ export async function hybridSearch(
   // main RRF path. Parsed from the original query (deterministic); empty for
   // non-relational queries → pure no-op. (Modality gate lives on the main
   // path; the parser only matches text-shaped relational queries anyway.)
+  //
+  // v0.43 strict unified-only: the relational arm is text/graph-derived, so it
+  // must be suppressed under search.unified_multimodal_only just like keyword —
+  // otherwise typed-edge answers would leak text hits into the "multimodal-only"
+  // result set on the success path (RRF fusion), the fallback, and the
+  // empty-vector path, defeating the flag.
+  const strictUnifiedOnly =
+    resolvedMode.unified_multimodal === true && resolvedMode.unified_multimodal_only === true;
   let relationalList: SearchResult[] = [];
-  if (resolvedMode.relationalRetrieval) {
+  if (resolvedMode.relationalRetrieval && !strictUnifiedOnly) {
     relationalList = await buildRelationalArm(engine, query, {
       sourceId: opts?.sourceId,
       sourceIds: opts?.sourceIds,
@@ -996,56 +987,6 @@ export async function hybridSearch(
       limit: opts?.limit ?? resolvedMode.searchLimit,
       onMeta: opts?.onRelationalMeta,
     });
-  }
-
-  // Skip vector search entirely if the gateway has no embedding provider configured (Codex C3).
-  // v0.36 (D10): ask "is the RESOLVED column's provider reachable?" rather
-  // than "is the global default reachable?" — otherwise an unreachable
-  // global default disables vector search even when the active column's
-  // provider (Voyage, ZE) works fine.
-  const { isAvailable } = await import('../ai/gateway.ts');
-  const providerProbe = resolvedCol.embeddingModel || undefined;
-  if (!isAvailable('embedding', providerProbe)) {
-    // v0.43 — fuse the relational arm with keyword so typed-edge answers
-    // survive on the no-embedding-provider path (the relational win is most
-    // valuable exactly when vector is unavailable).
-    let noEmbedResults = keywordResults;
-    if (relationalList.length > 0) {
-      const fk = opts?.rrfK ?? RRF_K;
-      noEmbedResults = rrfFusionWeighted(
-        [{ list: keywordResults, k: fk }, { list: relationalList, k: fk }],
-        detailResolved !== 'high',
-      );
-    }
-    if (noEmbedResults.length > 0) {
-      await runPostFusionStages(engine, noEmbedResults, postFusionOpts);
-      noEmbedResults.sort((a, b) => b.score - a.score);
-    }
-    // T3/T4 — alias hop + evidence stamp even without an embedding provider
-    // (the named-thing fix is most valuable exactly when vector is unavailable).
-    const noEmbedHopped = await applyAliasHop(engine, dedupResults(noEmbedResults), query, {
-      sourceId: opts?.sourceId,
-      sourceIds: opts?.sourceIds,
-    });
-    stampEvidence(noEmbedHopped);
-    const noEmbedSliced = noEmbedHopped.slice(offset, offset + limit);
-    // v0.32.3 search-lite: budget enforcement on the no-embedding-provider path.
-    const { results: noEmbedBudgeted, meta: noEmbedBudgetMeta } = enforceTokenBudget(noEmbedSliced, resolvedMode.tokenBudget);
-    await stampContentFlags(engine, noEmbedBudgeted);
-    lastResultsCount = noEmbedBudgeted.length;
-    lastRank1Score = noEmbedBudgeted[0] ? (noEmbedBudgeted[0].base_score ?? noEmbedBudgeted[0].score) : undefined;
-    emitMeta({
-      vector_enabled: false,
-      detail_resolved: detailResolved,
-      expansion_applied: false,
-      intent: suggestions.intent,
-      mode: resolvedMode.resolved_mode,
-      embedding_column: resolvedCol.name,
-      ...(resolvedMode.tokenBudget && resolvedMode.tokenBudget > 0
-        ? { token_budget: noEmbedBudgetMeta }
-        : {}),
-    });
-    return noEmbedBudgeted;
   }
 
   // v0.36 cross-modal wave: determine the effective modality once.
@@ -1092,6 +1033,81 @@ export async function hybridSearch(
   }
   const effectiveModality = regexModality;
   const unifiedRouting = resolvedMode.unified_multimodal === true;
+  const multimodalProviderProbe = cfgForColumn?.embedding_multimodal_model ?? 'voyage:voyage-multimodal-3';
+
+  // Run keyword search after the final modality/unified-routing decision.
+  //
+  // v0.36 cross-modal (D9): skip keyword for image-only modality. Image
+  // chunks may have OCR text in chunk_text, but a text-only keyword scan
+  // would also surface every text chunk containing the query phrase —
+  // not what an image-intent query asked for. Image vector search is the
+  // canonical channel for image-modality queries.
+  //
+  // v0.43 strict unified multimodal: when unified routing is forced and the
+  // operator opted into `search.unified_multimodal_only=true`, suppress the
+  // keyword arm entirely. Otherwise an empty unified vector result would still
+  // leak text hits back in via RRF, defeating the "strict unified-only" flag.
+  const keywordResults: SearchResult[] =
+    effectiveModality === 'image' || (unifiedRouting && resolvedMode.unified_multimodal_only)
+      ? []
+      : await engine.searchKeyword(query, searchOpts);
+
+  // Skip vector search entirely if the gateway has no embedding provider
+  // configured (Codex C3). v0.36 (D10): probe the RESOLVED column's provider,
+  // not the global default, so an unreachable global default doesn't disable
+  // vector search when the active column's provider (Voyage, ZE) works fine.
+  //
+  // This MUST run BEFORE query expansion below: the no-provider path must never
+  // invoke opts.expandFn and must report expansion_applied=false. Regression
+  // guard: test/hybrid-meta.serial.test.ts ("early-return short-circuits
+  // expansion"). The relational arm is fused with keyword so typed-edge answers
+  // survive on the no-embedding-provider path.
+  const { isAvailable } = await import('../ai/gateway.ts');
+  const providerProbe = resolvedCol.embeddingModel || undefined;
+  // Image/both/unified routing embeds via the MULTIMODAL provider, not the
+  // text provider — so a multimodal-only install (text provider absent) must
+  // still reach the multimodal branch below. Only short-circuit when neither
+  // the text provider nor (for multimodal-routed queries) the multimodal
+  // provider is reachable.
+  const willTryMultimodal =
+    (unifiedRouting || effectiveModality === 'image' || effectiveModality === 'both') &&
+    isAvailable('embedding', multimodalProviderProbe);
+  if (!isAvailable('embedding', providerProbe) && !willTryMultimodal) {
+    let noEmbedResults = keywordResults;
+    if (relationalList.length > 0) {
+      const fk = opts?.rrfK ?? RRF_K;
+      noEmbedResults = rrfFusionWeighted(
+        [{ list: keywordResults, k: fk }, { list: relationalList, k: fk }],
+        detailResolved !== 'high',
+      );
+    }
+    if (noEmbedResults.length > 0) {
+      await runPostFusionStages(engine, noEmbedResults, postFusionOpts);
+      noEmbedResults.sort((a, b) => b.score - a.score);
+    }
+    const noEmbedHopped = await applyAliasHop(engine, dedupResults(noEmbedResults), query, {
+      sourceId: opts?.sourceId,
+      sourceIds: opts?.sourceIds,
+    });
+    stampEvidence(noEmbedHopped);
+    const noEmbedSliced = noEmbedHopped.slice(offset, offset + limit);
+    const { results: noEmbedBudgeted, meta: noEmbedBudgetMeta } = enforceTokenBudget(noEmbedSliced, resolvedMode.tokenBudget);
+    await stampContentFlags(engine, noEmbedBudgeted);
+    lastResultsCount = noEmbedBudgeted.length;
+    lastRank1Score = noEmbedBudgeted[0] ? (noEmbedBudgeted[0].base_score ?? noEmbedBudgeted[0].score) : undefined;
+    emitMeta({
+      vector_enabled: false,
+      detail_resolved: detailResolved,
+      expansion_applied: false,
+      intent: suggestions.intent,
+      mode: resolvedMode.resolved_mode,
+      embedding_column: resolvedCol.name,
+      ...(resolvedMode.tokenBudget && resolvedMode.tokenBudget > 0
+        ? { token_budget: noEmbedBudgetMeta }
+        : {}),
+    });
+    return noEmbedBudgeted;
+  }
 
   // Determine query variants (optionally with expansion)
   // expandQuery already includes the original query in its return value,
@@ -1124,6 +1140,7 @@ export async function hybridSearch(
   let queryEmbedding: Float32Array | null = null;
   let imageVectorList: SearchResult[] | null = null;
   let crossModalFellOpen = false;
+  let strictUnifiedFailed = false;
 
   // Phase 3 unified routing: when on, route ALL queries through Voyage
   // multimodal-3 + embedding_multimodal column. Bypasses the dual-column
@@ -1135,7 +1152,7 @@ export async function hybridSearch(
   if (unifiedRouting) {
     try {
       const { isAvailable: aiIsAvailable, embedQueryMultimodal } = await import('../ai/gateway.ts');
-      if (!aiIsAvailable('embedding')) {
+      if (!aiIsAvailable('embedding', multimodalProviderProbe)) {
         throw new Error('gateway not configured for embedding — unified multimodal would also fail');
       }
       const unifiedEmbedding = await embedQueryMultimodal(query);
@@ -1161,16 +1178,20 @@ export async function hybridSearch(
       console.error(
         `[cross-modal] unified_multimodal embed failed; falling back to dual-column path. reason=${reason}`,
       );
-      crossModalFellOpen = true;
+      if (resolvedMode.unified_multimodal_only) {
+        strictUnifiedFailed = true;
+      } else {
+        crossModalFellOpen = true;
+      }
     }
   }
 
-  if (!unifiedDone && (effectiveModality === 'image' || effectiveModality === 'both')) {
+  if (!strictUnifiedFailed && !unifiedDone && (effectiveModality === 'image' || effectiveModality === 'both')) {
     // Attempt image-side embedding. Fail-open: if multimodal is unconfigured
     // OR the embed throws, log a structured warning and fall through to text.
     try {
       const { isAvailable: aiIsAvailable, embedQueryMultimodal } = await import('../ai/gateway.ts');
-      if (!aiIsAvailable('embedding')) {
+      if (!aiIsAvailable('embedding', multimodalProviderProbe)) {
         throw new Error('gateway not configured for embedding — multimodal would also fail');
       }
       const imageEmbedding = await embedQueryMultimodal(query);
@@ -1193,7 +1214,11 @@ export async function hybridSearch(
     }
   }
 
-  if (unifiedDone) {
+  if (strictUnifiedFailed) {
+    // Strict unified mode disables all legacy fallbacks. The unified embed/search
+    // already failed; suppress the text path and let the shared empty-vector
+    // fallback below return an empty result set with vector_enabled=false.
+  } else if (unifiedDone) {
     // Unified routing already populated vectorLists + queryEmbedding;
     // skip the dual-column branching.
   } else if (effectiveModality === 'image' && imageVectorList !== null) {
@@ -1272,7 +1297,11 @@ export async function hybridSearch(
       expansion_applied: expansionApplied,
       intent: suggestions.intent,
       mode: resolvedMode.resolved_mode,
-      embedding_column: resolvedCol.name,
+      // When unified routing was active, the column actually attempted was
+      // embedding_multimodal (not resolvedCol.name) — report it accurately so
+      // telemetry on the strict-unified-failed / unified-fail-open fallback
+      // doesn't misattribute the column.
+      embedding_column: unifiedRouting ? 'embedding_multimodal' : resolvedCol.name,
       ...(resolvedMode.tokenBudget && resolvedMode.tokenBudget > 0
         ? { token_budget: kwBudgetMeta }
         : {}),
@@ -1330,7 +1359,9 @@ export async function hybridSearch(
   // in the same vector space the HNSW just ranked in. Pre-v0.36 this
   // always pulled from `embedding` and silently corrupted alt-column ranks.
   if (queryEmbedding) {
-    fused = await cosineReScore(engine, fused, queryEmbedding, resolvedCol.name);
+    const cosineColumn =
+      unifiedDone ? 'embedding_multimodal' : resolvedCol.name;
+    fused = await cosineReScore(engine, fused, queryEmbedding, cosineColumn);
   }
 
   // v0.29.1: post-fusion stages (backlink + salience + recency) run via
@@ -1588,6 +1619,18 @@ export async function hybridSearchCached(
   const cfgCached = mergedCfgCached ?? ((await import('../config.ts')).loadConfig()) ?? { engine: 'pglite' as const };
   const resolvedColCached = resolveEmbeddingColumn(opts, cfgCached);
   const isNonDefaultColumn = !isCacheSafe(resolvedColCached, cfgCached);
+  const explicitModalityCached =
+    opts?.crossModal && opts.crossModal !== 'auto' ? opts.crossModal : undefined;
+  const regexModalityCached = explicitModalityCached ?? classifyQuery(query).suggestedModality ?? 'text';
+  const llmMayEscalateCached =
+    explicitModalityCached === undefined &&
+    regexModalityCached === 'text' &&
+    resolvedForCache.cross_modal_llm_intent &&
+    isAmbiguousModalityQuery(query);
+  const multimodalCacheUnsafe =
+    resolvedForCache.unified_multimodal ||
+    regexModalityCached !== 'text' ||
+    llmMayEscalateCached;
 
   // Cache key carries the column + provider so different embedding spaces
   // never collide on the same `(source_id, query_text)` row.
@@ -1625,6 +1668,7 @@ export async function hybridSearchCached(
     (opts?.walkDepth ?? 0) > 0 ||
     Boolean(opts?.nearSymbol) ||
     isNonDefaultColumn ||
+    multimodalCacheUnsafe ||
     adaptiveReturnOn;
 
   let cacheStatus: 'hit' | 'miss' | 'disabled' = skipCache ? 'disabled' : 'miss';
@@ -1654,11 +1698,17 @@ export async function hybridSearchCached(
       // the provider probe consistent with the bare hybridSearch path.
       const providerProbeCached = resolvedColCached.embeddingModel || undefined;
       if (isAvailable('embedding', providerProbeCached)) {
+        const embedOptsCached = resolvedColCached.embeddingModel
+          ? {
+              embeddingModel: resolvedColCached.embeddingModel,
+              dimensions: resolvedColCached.dimensions,
+            }
+          : undefined;
         // v0.35.0.0+: query-side embedding (cache lookup path).
         // v0.42.20.0 (Fix 3) — bounded by the shared deadline; on timeout this
         // throws → caught below → cacheStatus 'disabled' → falls through to the
         // inner hybridSearch (which reuses the same elapsed deadline).
-        queryEmbedding = await embedQueryBounded(query, undefined, queryEmbedDl);
+        queryEmbedding = await embedQueryBounded(query, embedOptsCached, queryEmbedDl);
       } else {
         cacheStatus = 'disabled';
       }

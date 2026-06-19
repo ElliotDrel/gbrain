@@ -7,11 +7,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { resetPgliteState } from './helpers/reset-pglite.ts';
+import { withEnv } from './helpers/with-env.ts';
 import {
   configureGateway,
   resetGateway,
 } from '../src/core/ai/gateway.ts';
-import { hybridSearch } from '../src/core/search/hybrid.ts';
+import { hybridSearch, hybridSearchCached } from '../src/core/search/hybrid.ts';
 
 let engine: PGLiteEngine;
 
@@ -20,6 +21,19 @@ let fetchHandler: FetchHandler | null = null;
 const origFetch = globalThis.fetch;
 let fetchUrlsSeen: string[] = [];
 let fetchBodiesSeen: any[] = [];
+const TEXT_EMBED_ENV = {
+  GBRAIN_EMBEDDING_MODEL: 'openai:text-embedding-3-large',
+  GBRAIN_EMBEDDING_DIMENSIONS: '1536',
+} as const;
+
+function captureEmbeddingColumnName(opts: Parameters<PGLiteEngine['searchVector']>[1]): string {
+  const column = opts?.embeddingColumn;
+  if (typeof column === 'string') return column;
+  if (column && typeof column === 'object' && 'name' in column && typeof column.name === 'string') {
+    return column.name;
+  }
+  return 'embedding';
+}
 
 beforeAll(async () => {
   engine = new PGLiteEngine();
@@ -74,147 +88,227 @@ function configureBoth() {
 
 describe('hybridSearch cross-modal routing (Phase 1 integration)', () => {
   test("explicit crossModal: 'image' calls Voyage multimodal endpoint, NOT OpenAI", async () => {
-    configureBoth();
-    // Stub the Voyage multimodal endpoint with a deterministic 1024d vector.
-    fetchHandler = async (url) => {
-      if (url.includes('multimodalembeddings')) {
-        return new Response(JSON.stringify({
-          data: [{ embedding: Array.from({ length: 1024 }, () => 0.5), index: 0 }],
-          model: 'voyage-multimodal-3',
-        }), { status: 200 });
-      }
-      // Fail OpenAI requests loudly so we catch wrong routing.
-      throw new Error(`Unexpected fetch to OpenAI: ${url}`);
-    };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureBoth();
+      const originalSearchVector = engine.searchVector.bind(engine);
+      const embeddingColumnsSeen: string[] = [];
+      engine.searchVector = (async (embedding, opts) => {
+        embeddingColumnsSeen.push(captureEmbeddingColumnName(opts));
+        return originalSearchVector(embedding, opts);
+      }) as typeof engine.searchVector;
+      try {
+        fetchHandler = async (url) => {
+          if (url.includes('multimodalembeddings')) {
+            return new Response(JSON.stringify({
+              data: [{ embedding: Array.from({ length: 1024 }, () => 0.5), index: 0 }],
+              model: 'voyage-multimodal-3',
+            }), { status: 200 });
+          }
+          throw new Error(`Unexpected fetch to OpenAI: ${url}`);
+        };
 
-    // hybridSearch with no rows in DB just returns []; we're testing that the
-    // request hits the multimodal endpoint specifically.
-    const results = await hybridSearch(engine, 'hackathon stuff', { crossModal: 'image', limit: 5 });
-    expect(Array.isArray(results)).toBe(true);
-    // Must have called the multimodal endpoint at least once.
-    expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(true);
-    // Must NOT have called OpenAI embeddings.
-    expect(fetchUrlsSeen.some(u => u.includes('api.openai.com') && u.includes('embeddings'))).toBe(false);
+        const results = await hybridSearch(engine, 'hackathon stuff', { crossModal: 'image', limit: 5 });
+        expect(Array.isArray(results)).toBe(true);
+        expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(true);
+        expect(fetchUrlsSeen.some(u => u.includes('api.openai.com') && u.includes('embeddings'))).toBe(false);
+        expect(embeddingColumnsSeen).toEqual(['embedding_image']);
+      } finally {
+        engine.searchVector = originalSearchVector as typeof engine.searchVector;
+      }
+    });
   });
 
   test('explicit crossModal: "image" threads inputType=query in Voyage body (D22-2)', async () => {
-    configureBoth();
-    fetchHandler = async (url) => {
-      if (url.includes('multimodalembeddings')) {
-        return new Response(JSON.stringify({
-          data: [{ embedding: Array.from({ length: 1024 }, () => 0.5), index: 0 }],
-          model: 'voyage-multimodal-3',
-        }), { status: 200 });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureBoth();
+      fetchHandler = async (url) => {
+        if (url.includes('multimodalembeddings')) {
+          return new Response(JSON.stringify({
+            data: [{ embedding: Array.from({ length: 1024 }, () => 0.5), index: 0 }],
+            model: 'voyage-multimodal-3',
+          }), { status: 200 });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      };
 
-    await hybridSearch(engine, 'any text', { crossModal: 'image', limit: 5 });
-    const voyageBody = fetchBodiesSeen.find(b => b?.inputs?.[0]?.content?.[0]?.type === 'text');
-    expect(voyageBody).toBeDefined();
-    expect(voyageBody.input_type).toBe('query');
+      await hybridSearch(engine, 'any text', { crossModal: 'image', limit: 5 });
+      const voyageBody = fetchBodiesSeen.find(b => b?.inputs?.[0]?.content?.[0]?.type === 'text');
+      expect(voyageBody).toBeDefined();
+      expect(voyageBody.input_type).toBe('query');
+    });
   });
 
   test('default crossModal=text query does NOT call Voyage multimodal', async () => {
-    configureBoth();
-    // Allow text embed to succeed via the default OpenAI fetch handler.
-    fetchHandler = async (url) => {
-      if (url.includes('multimodalembeddings')) {
-        throw new Error('Unexpected multimodal call for text-modality query');
-      }
-      // OpenAI text-embedding response shape: {data: [{embedding: [...]}]}
-      return new Response(JSON.stringify({
-        data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
-        model: 'text-embedding-3-large',
-      }), { status: 200 });
-    };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureBoth();
+      fetchHandler = async (url) => {
+        if (url.includes('multimodalembeddings')) {
+          throw new Error('Unexpected multimodal call for text-modality query');
+        }
+        return new Response(JSON.stringify({
+          data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
+          model: 'text-embedding-3-large',
+        }), { status: 200 });
+      };
 
-    await hybridSearch(engine, 'what is founder mode', { limit: 5 });
-    expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(false);
+      await hybridSearch(engine, 'what is founder mode', { limit: 5 });
+      expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(false);
+    });
   });
 
   test("'auto' literal normalizes to undefined (D22-1) — text query still routes text", async () => {
-    configureBoth();
-    fetchHandler = async (url) => {
-      if (url.includes('multimodalembeddings')) {
-        throw new Error('Unexpected multimodal call for auto-text-intent query');
-      }
-      return new Response(JSON.stringify({
-        data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
-        model: 'text-embedding-3-large',
-      }), { status: 200 });
-    };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureBoth();
+      fetchHandler = async (url) => {
+        if (url.includes('multimodalembeddings')) {
+          throw new Error('Unexpected multimodal call for auto-text-intent query');
+        }
+        return new Response(JSON.stringify({
+          data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
+          model: 'text-embedding-3-large',
+        }), { status: 200 });
+      };
 
-    await hybridSearch(engine, 'what is founder mode', { crossModal: 'auto', limit: 5 });
-    // Text route — multimodal never called.
-    expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(false);
+      await hybridSearch(engine, 'what is founder mode', { crossModal: 'auto', limit: 5 });
+      expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(false);
+    });
   });
 
   test('"show me photos from the hackathon" auto-detects to image routing', async () => {
-    configureBoth();
-    fetchHandler = async (url) => {
-      if (url.includes('multimodalembeddings')) {
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureBoth();
+      fetchHandler = async (url) => {
+        if (url.includes('multimodalembeddings')) {
+          return new Response(JSON.stringify({
+            data: [{ embedding: Array.from({ length: 1024 }, () => 0.3), index: 0 }],
+            model: 'voyage-multimodal-3',
+          }), { status: 200 });
+        }
         return new Response(JSON.stringify({
-          data: [{ embedding: Array.from({ length: 1024 }, () => 0.3), index: 0 }],
-          model: 'voyage-multimodal-3',
+          data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
+          model: 'text-embedding-3-large',
         }), { status: 200 });
-      }
-      // Don't fail OpenAI here — auto mode might still call text in 'both' fallback.
-      return new Response(JSON.stringify({
-        data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
-        model: 'text-embedding-3-large',
-      }), { status: 200 });
-    };
+      };
 
-    await hybridSearch(engine, 'show me photos from the hackathon', { limit: 5 });
-    // Auto-detection should have fired image routing.
-    expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(true);
+      await hybridSearch(engine, 'show me photos from the hackathon', { limit: 5 });
+      expect(fetchUrlsSeen.some(u => u.includes('multimodalembeddings'))).toBe(true);
+    });
   });
 
   test("'both' mode hits BOTH endpoints in parallel", async () => {
-    configureBoth();
-    let textCalled = 0;
-    let voyageCalled = 0;
-    fetchHandler = async (url) => {
-      if (url.includes('multimodalembeddings')) {
-        voyageCalled++;
-        return new Response(JSON.stringify({
-          data: [{ embedding: Array.from({ length: 1024 }, () => 0.3), index: 0 }],
-          model: 'voyage-multimodal-3',
-        }), { status: 200 });
-      }
-      textCalled++;
-      return new Response(JSON.stringify({
-        data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
-        model: 'text-embedding-3-large',
-      }), { status: 200 });
-    };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureBoth();
+      const originalSearchVector = engine.searchVector.bind(engine);
+      const embeddingColumnsSeen: string[] = [];
+      let textCalled = 0;
+      let voyageCalled = 0;
+      engine.searchVector = (async (embedding, opts) => {
+        embeddingColumnsSeen.push(captureEmbeddingColumnName(opts));
+        return originalSearchVector(embedding, opts);
+      }) as typeof engine.searchVector;
+      try {
+        fetchHandler = async (url) => {
+          if (url.includes('multimodalembeddings')) {
+            voyageCalled++;
+            return new Response(JSON.stringify({
+              data: [{ embedding: Array.from({ length: 1024 }, () => 0.3), index: 0 }],
+              model: 'voyage-multimodal-3',
+            }), { status: 200 });
+          }
+          textCalled++;
+          return new Response(JSON.stringify({
+            data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
+            model: 'text-embedding-3-large',
+          }), { status: 200 });
+        };
 
-    await hybridSearch(engine, 'anything', { crossModal: 'both', limit: 5 });
-    expect(textCalled).toBeGreaterThanOrEqual(1);
-    expect(voyageCalled).toBeGreaterThanOrEqual(1);
+        await hybridSearch(engine, 'anything', { crossModal: 'both', limit: 5 });
+        expect(textCalled).toBeGreaterThanOrEqual(1);
+        expect(voyageCalled).toBeGreaterThanOrEqual(1);
+        expect(embeddingColumnsSeen).toContain('embedding');
+        expect(embeddingColumnsSeen).toContain('embedding_image');
+      } finally {
+        engine.searchVector = originalSearchVector as typeof engine.searchVector;
+      }
+    });
   });
 
   test('fail-open: multimodal unconfigured → image-intent query falls back to text', async () => {
-    configureGateway({
-      // No embedding_multimodal_model set.
-      embedding_model: 'openai:text-embedding-3-large',
-      embedding_dimensions: 1536,
-      env: { OPENAI_API_KEY: 'test-key' },
-    });
-    fetchHandler = async (url) => {
-      if (url.includes('multimodalembeddings')) {
-        throw new Error('Voyage should not be called when not configured');
-      }
-      return new Response(JSON.stringify({
-        data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
-        model: 'text-embedding-3-large',
-      }), { status: 200 });
-    };
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureGateway({
+        embedding_model: 'openai:text-embedding-3-large',
+        embedding_dimensions: 1536,
+        env: { OPENAI_API_KEY: 'test-key' },
+      });
+      fetchHandler = async (url) => {
+        if (url.includes('multimodalembeddings')) {
+          throw new Error('Voyage should not be called when not configured');
+        }
+        return new Response(JSON.stringify({
+          data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
+          model: 'text-embedding-3-large',
+        }), { status: 200 });
+      };
 
-    // crossModal: 'image' with no multimodal model → fail-open to text.
-    const results = await hybridSearch(engine, 'show me photos', { crossModal: 'image', limit: 5 });
-    expect(Array.isArray(results)).toBe(true);
-    // Did NOT throw; fell back successfully.
+      const results = await hybridSearch(engine, 'show me photos', { crossModal: 'image', limit: 5 });
+      expect(Array.isArray(results)).toBe(true);
+    });
+  });
+
+  test('image routing works with multimodal-only provider config', async () => {
+    configureGateway({
+      embedding_multimodal_model: 'voyage:voyage-multimodal-3',
+      env: { VOYAGE_API_KEY: 'voyage-test-key' },
+    });
+    const originalSearchVector = engine.searchVector.bind(engine);
+    const embeddingColumnsSeen: string[] = [];
+    engine.searchVector = (async (embedding, opts) => {
+      embeddingColumnsSeen.push(captureEmbeddingColumnName(opts));
+      return originalSearchVector(embedding, opts);
+    }) as typeof engine.searchVector;
+    try {
+      fetchHandler = async (url) => {
+        if (url.includes('multimodalembeddings')) {
+          return new Response(JSON.stringify({
+            data: [{ embedding: Array.from({ length: 1024 }, () => 0.2), index: 0 }],
+            model: 'voyage-multimodal-3',
+          }), { status: 200 });
+        }
+        throw new Error(`Unexpected text embedding fetch: ${url}`);
+      };
+
+      const results = await hybridSearch(engine, 'show me photos from demo day', { crossModal: 'image', limit: 5 });
+      expect(Array.isArray(results)).toBe(true);
+      expect(fetchUrlsSeen.some((u) => u.includes('multimodalembeddings'))).toBe(true);
+      expect(embeddingColumnsSeen).toEqual(['embedding_image']);
+    } finally {
+      engine.searchVector = originalSearchVector as typeof engine.searchVector;
+    }
+  });
+
+  test('hybridSearchCached disables cache for multimodal requests', async () => {
+    await withEnv(TEXT_EMBED_ENV, async () => {
+      configureBoth();
+      let meta: { cache?: { status?: string } } | undefined;
+      fetchHandler = async (url) => {
+        if (url.includes('multimodalembeddings')) {
+          return new Response(JSON.stringify({
+            data: [{ embedding: Array.from({ length: 1024 }, () => 0.4), index: 0 }],
+            model: 'voyage-multimodal-3',
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          data: [{ embedding: Array.from({ length: 1536 }, () => 0.1), index: 0 }],
+          model: 'text-embedding-3-large',
+        }), { status: 200 });
+      };
+
+      await hybridSearchCached(engine, 'show me photos from the hackathon', {
+        crossModal: 'image',
+        limit: 5,
+        onMeta: (m) => { meta = m; },
+      });
+      expect(meta?.cache?.status).toBe('disabled');
+    });
   });
 });
