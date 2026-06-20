@@ -3,8 +3,8 @@
 // bundle to stdout. This file does not perform any network I/O.
 //
 // PRECEDENCE: the persistent secret store is authoritative, NOT the process
-// environment. ~/.openclaw/.env wins for ScrapeCreators; ~/.openclaw/openclaw.json
-// wins for Supadata; an env var is only a fallback when the store is silent.
+// environment. ~/.openclaw/.env wins for both ScrapeCreators and Supadata;
+// an env var is only a fallback when the store is silent.
 // This defuses the "stale exported orphan shadows the corrected file" bug class
 // (see the 2026-06-19 SCRAPE_CREATORS_API_KEY incident): editing the file is the
 // single source of truth, and a leftover env var can never override it. When the
@@ -15,7 +15,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 const envPath = path.join(os.homedir(), '.openclaw', '.env');
-const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
 const KEY_NAMES = ['SCRAPECREATORS_API_KEY', 'SCRAPE_CREATORS_API_KEY'];
 
 function parseDotEnvValue(rawValue) {
@@ -60,11 +59,18 @@ function resolveScrapeCreatorsFromEnv() {
   return null;
 }
 
-function resolveSupadataFromConfig() {
+function resolveSupadataFromDotEnv() {
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const raw = config?.mcp?.servers?.supadata?.env?.SUPADATA_API_KEY;
-    if (typeof raw === 'string' && raw.trim()) return raw.trim();
+    const raw = fs.readFileSync(envPath, 'utf8');
+    for (const line of raw.split(/\r?\n/)) {
+      let trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      trimmed = trimmed.replace(/^export\s+/, '');
+      const match = trimmed.match(/^SUPADATA_API_KEY\s*=\s*(.*)$/);
+      if (!match) continue;
+      const value = parseDotEnvValue(match[1]);
+      if (value) return value;
+    }
   } catch {
     return null;
   }
@@ -87,19 +93,19 @@ if (!scrapeCreatorsApiKey) {
   process.exit(2);
 }
 
-// --- Supadata: ~/.openclaw/openclaw.json is authoritative, env is fallback ---
-const sdConfig = resolveSupadataFromConfig();
+// --- Supadata: ~/.openclaw/.env is authoritative, env is fallback ---
+const sdFile = resolveSupadataFromDotEnv();
 const sdEnv = process.env.SUPADATA_API_KEY && process.env.SUPADATA_API_KEY.trim()
   ? process.env.SUPADATA_API_KEY.trim()
   : null;
-if (sdConfig && sdEnv && sdConfig !== sdEnv) {
+if (sdFile && sdEnv && sdFile !== sdEnv) {
   console.error(
-    'WARN: Supadata key in ~/.openclaw/openclaw.json differs from the ' +
-    'SUPADATA_API_KEY environment variable. Using the openclaw.json value ' +
-    '(config is authoritative). A stale/exported env var may be shadowing it.',
+    'WARN: Supadata key in ~/.openclaw/.env differs from the ' +
+    'SUPADATA_API_KEY environment variable. Using the .env value ' +
+    '(file is authoritative). A stale/exported env var may be shadowing it.',
   );
 }
-const supadataApiKey = sdConfig || sdEnv || null;
+const supadataApiKey = sdFile || sdEnv || null;
 
 process.stdout.write(JSON.stringify({
   scrapeCreatorsApiKey,
