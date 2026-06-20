@@ -8,7 +8,38 @@ workspace scripts) unless they've been moved upstream into gbrain itself.
 
 No code snippets — only intent, scope, and enough pointers to rebuild quickly.
 
-Last updated: 2026-06-17 (on gbrain 0.42.47.0). Upgrade audit this date:
+Last updated: 2026-06-20 (on gbrain 0.42.51.0). Upgrade + full re-audit this
+date: `gbrain upgrade` rebased 104 fork-patch commits from 0.42.47.0 onto
+upstream `origin/master` 0.42.51.0 (in: 0.42.48 repo durability-on-PAT, 0.42.49
+self-throttling embed/sync backfills, 0.42.50 CI hardening, 0.42.51
+contention-free sync clock + checkpoint integrity + honest sync-freshness #2255).
+**103/104 replayed cleanly.** The one conflict was the test-only commit
+`test(conversation-parser): make LLM "no key" tests hermetic` — upstream shipped
+an equivalent, so upstream's version was kept and ours backed up to
+`~/.gbrain/upgrade-backups/20260620-074918/` (test-only, never a tracked B-entry;
+effectively retired). **Every Section-A and Section-B Drop-when re-checked vs
+origin/master 0.42.51.0; NOTHING dropped this cycle** (B1/B2 were already retired
+in prior upgrades; nothing else is yet fixed upstream):
+- **B1, B2 — stay RETIRED.** Upstream embed timeout present (`AI_EMBED_TIMEOUT_MS`/
+  `withDefaultTimeout`); upstream `cli.ts` drains background work on exit via
+  `finishCliTeardown({drainTimeoutMs})` (#2084+#1762) — the drain did NOT regress,
+  just moved/renamed. Our copies remain absent.
+- **B3, B4, B5, B6, B7 — stay ACTIVE (re-verified not fixed upstream):** onboard
+  still `Promise.all` + no onboard-timeout in doctor (B3); sync still hard-codes
+  `mode:'queue'`, no `factsInline` (B4); resolver fallback still flat `slugify`,
+  no prefix-preserving split (B5 — note upstream now has `tryPrefixExpansion` for
+  bare→prefixed, which is COMPLEMENTARY to B5's prefixed→stays-prefixed, not a
+  replacement); import walker still extension-only `isCollectibleForWalker` (B6);
+  `SYNC_SKIP_FILES` still lacks `RESOLVER.md` (B7).
+- **A1–A8 — all stay ACTIVE (none upstreamed):** verified `files.ts uploadRaw` has
+  no `.raw/` sidecar (A2); `extract.ts extractTimelineFromContent` has only the
+  bold-pipe regex, no plain-bullet Format-3 (A4); no `conversation-parser/body.ts`
+  and no `speaker-letter-no-time` builtin (A6); `openclaw.plugin.json` carries only
+  `name`, no `id`/`kind`, and the entry is still `id:'gbrain-context-engine'` (A8).
+typecheck clean; both brains migrated to schema 119; sync/dream write-paths
+re-verified on 0.42.51.0; pushed to fork `master` (fc614d9f, force-with-lease).
+
+Prior audit: 2026-06-17 (on gbrain 0.42.47.0). Upgrade audit that date:
 rebased the 87 fork patches from `0.42.42.0` onto upstream `origin/master`
 `0.42.47.0` (came in: 0.42.43 push-based context #2095 + teardown-exit #2084,
 0.42.44 docs, 0.42.45 delta-aware sync cost estimator #2139, 0.42.46 federated
