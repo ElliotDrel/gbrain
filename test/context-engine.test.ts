@@ -193,6 +193,25 @@ describe('gbrain-context engine', () => {
     expect(result.estimatedTokens).toBeLessThanOrEqual(110);
   });
 
+  it('does not crash when a projected message has missing content', async () => {
+    tmpDir = makeWorkspace({ heartbeat: { garryAwake: true } });
+    const engine = createGBrainContextEngine({ workspaceDir: tmpDir });
+
+    const messages = [
+      { role: 'user' as const, content: [{ type: 'input_text', text: 'hi' }] },
+      { role: 'assistant' as const, content: undefined },
+    ];
+
+    const result = await engine.assemble({
+      sessionId: 'test-session',
+      messages: messages as any[],
+    });
+
+    expect(result.messages).toBe(messages);
+    expect(result.estimatedTokens).toBeGreaterThanOrEqual(0);
+    expect(result.systemPromptAddition).toContain('Live Context');
+  });
+
   // ── Activity / Calendar tests ──────────────────────────────────────────
 
   it('injects current event when calendar has an active meeting', async () => {

@@ -50,7 +50,7 @@ describe('openclaw-context-engine plugin entry', () => {
     expect(typeof entry.register).toBe('function');
   });
 
-  it('register() wires registerContextEngine with ENGINE_ID and a factory', () => {
+  it('register() wires registerContextEngine with the plugin slot id and a factory', () => {
     type RegisterCall = { id: string; factory: (ctx: { workspaceDir: string }) => unknown };
     const calls: RegisterCall[] = [];
     const stubApi = {
@@ -62,7 +62,10 @@ describe('openclaw-context-engine plugin entry', () => {
     (pluginEntry as PluginEntryShape).register(stubApi);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].id).toBe(ENGINE_ID);
+    // The host resolves plugins.slots.contextEngine against the registration
+    // key, which must stay aligned with the plugin id ("gbrain"). The engine's
+    // internal info.id remains ENGINE_ID ("gbrain-context").
+    expect(calls[0].id).toBe('gbrain');
     expect(typeof calls[0].factory).toBe('function');
   });
 

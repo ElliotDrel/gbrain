@@ -192,10 +192,11 @@ describe('openclaw-plugin-load-real (Tier 2 e2e)', () => {
     () => {
       const inspect = inspectRuntimePlugin();
 
-      // Runtime inspect should expose both the manifest/plugin id and the
-      // registered engine id when the entry loaded successfully.
+      // Runtime inspect exposes the manifest/plugin id and the registration id
+      // used for the context-engine slot. The engine's internal info.id is
+      // validated separately via the direct factory round-trip below.
       expect(inspect.plugin.id).toBe(PLUGIN_ID);
-      expect(inspect.plugin.contextEngineIds).toContain(ENGINE_ID);
+      expect(inspect.plugin.contextEngineIds).toContain(PLUGIN_ID);
       expect(inspect.plugin.status).toBe('loaded');
       expect(inspect.plugin.activated).toBe(true);
     },

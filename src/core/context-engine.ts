@@ -171,6 +171,28 @@ function messageText(content: unknown): string {
   return '';
 }
 
+/**
+ * Estimate tokens for an arbitrary message payload without assuming the
+ * content is always a string or JSON-stringifiable. OpenClaw can hand us
+ * placeholder/system messages with missing content during projection, and the
+ * old `JSON.stringify(...).length` path would throw on `undefined`.
+ */
+function estimateMessageTokens(content: unknown): number {
+  if (typeof content === 'string') return Math.ceil(content.length / 4);
+
+  const extractedText = messageText(content);
+  if (extractedText) return Math.ceil(extractedText.length / 4);
+
+  try {
+    const json = JSON.stringify(content);
+    if (typeof json === 'string') return Math.ceil(json.length / 4);
+  } catch {
+    // Fall through to 0 for circular / unserializable content.
+  }
+
+  return 0;
+}
+
 /** Text of the current turn = the LAST user-role message. '' if none. */
 function getLastUserText(messages: AgentMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -686,12 +708,7 @@ export function createGBrainContextEngine(ctx: {
       // 4. Pass through messages unchanged (legacy assembly)
       return {
         messages,
-        estimatedTokens: messages.reduce((sum, m) => {
-          const text = typeof m.content === 'string'
-            ? m.content
-            : JSON.stringify(m.content);
-          return sum + Math.ceil(text.length / 4);
-        }, 0),
+        estimatedTokens: messages.reduce((sum, m) => sum + estimateMessageTokens(m.content), 0),
         systemPromptAddition: parts.join('\n\n'),
       };
     },
