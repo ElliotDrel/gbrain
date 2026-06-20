@@ -70,14 +70,25 @@ interface PluginCtx {
   [key: string]: unknown;
 }
 
+/**
+ * The host resolves `plugins.slots.contextEngine` against the KEY passed to
+ * `registerContextEngine` — not the engine's internal `info.id`. That slot is
+ * set to the plugin id ("gbrain"), so the registration key MUST equal the
+ * plugin id. Registering under the engine's internal ENGINE_ID
+ * ("gbrain-context") instead made the slot lookup miss, which quarantined the
+ * engine and silently fell back to the "legacy" engine. Bind both to one
+ * constant so they can never drift again; ENGINE_ID stays as `info.id` below.
+ */
+const PLUGIN_ID = 'gbrain';
+
 const entry: PluginEntry = {
-  id: 'gbrain',
+  id: PLUGIN_ID,
   kind: 'context-engine',
   name: 'GBrain Context Engine',
   description: 'Deterministic temporal/spatial context injection on every turn',
 
   register(api: PluginApi) {
-    api.registerContextEngine(ENGINE_ID, (ctx: PluginCtx) => {
+    api.registerContextEngine(PLUGIN_ID, (ctx: PluginCtx) => {
       const hostResolver =
         typeof ctx.resolveEntities === 'function'
           ? ctx.resolveEntities
