@@ -24,13 +24,16 @@ in prior upgrades; nothing else is yet fixed upstream):
   `withDefaultTimeout`); upstream `cli.ts` drains background work on exit via
   `finishCliTeardown({drainTimeoutMs})` (#2084+#1762) — the drain did NOT regress,
   just moved/renamed. Our copies remain absent.
-- **B3, B4, B5, B6, B7 — stay ACTIVE (re-verified not fixed upstream):** onboard
-  still `Promise.all` + no onboard-timeout in doctor (B3); sync still hard-codes
-  `mode:'queue'`, no `factsInline` (B4); resolver fallback still flat `slugify`,
-  no prefix-preserving split (B5 — note upstream now has `tryPrefixExpansion` for
-  bare→prefixed, which is COMPLEMENTARY to B5's prefixed→stays-prefixed, not a
-  replacement); import walker still extension-only `isCollectibleForWalker` (B6);
-  `SYNC_SKIP_FILES` still lacks `RESOLVER.md` (B7).
+- **B3, B4, B5, B6, B7, B8 — stay ACTIVE (re-verified not fixed upstream):**
+  onboard still `Promise.all` + no onboard-timeout in doctor (B3); sync still
+  hard-codes `mode:'queue'`, no `factsInline` (B4); resolver fallback still flat
+  `slugify`, no prefix-preserving split (B5 — note upstream now has
+  `tryPrefixExpansion` for bare→prefixed, which is COMPLEMENTARY to B5's
+  prefixed→stays-prefixed, not a replacement); import walker still
+  extension-only `isCollectibleForWalker` (B6); `SYNC_SKIP_FILES` still lacks
+  `RESOLVER.md` (B7); checkpoint writes still bind `recordCompleted` through
+  top-level `$3::jsonb` and still have no read-pool fallback after direct-path
+  failure (B8).
 - **A1–A8 — all stay ACTIVE (none upstreamed):** verified `files.ts uploadRaw` has
   no `.raw/` sidecar (A2); `extract.ts extractTimelineFromContent` has only the
   bold-pipe regex, no plain-bullet Format-3 (A4); no `conversation-parser/body.ts`
@@ -572,3 +575,46 @@ exclude RESOLVER.md).
 **Companion data cleanup (not code):** soft-deleted the live `resolver` page via
 `gbrain delete resolver` (recoverable 72h). Verified 0 facts / 0 links / 0 page_links first;
 206 live pages remain, 0 chunks for `resolver`, absent from search.
+
+## B8. MODIFIED gbrain source — `src/core/op-checkpoint.ts` (`recordCompleted` JSONB binding + direct-write fallback)
+**Status: ACTIVE** (added 2026-06-21; upstream has NOT fixed).
+**Upstream:** upstream `origin/master` 0.42.51.0 hardened sync checkpoint integrity
+and repair, but the non-sync checkpoint writer `recordCompleted(...)` still writes
+`completed_keys` as top-level `$3::jsonb` from `JSON.stringify(sorted)`, and all
+durable checkpoint writes still treat a direct-pool failure as terminal. Check:
+`git show origin/master:src/core/op-checkpoint.ts | sed -n '189,235p'` -- if you
+still see `VALUES ($1, $2, $3::jsonb, now())` and no fallback `executeRaw(...)`
+path after `executeRawDirect(...)`, upstream has NOT fixed this entry.
+**How it bit us:** on the personal brain, `gbrain sync` was failing before import
+when persisting the pinned `sync-target` checkpoint. There were two live failure
+lanes:
+1. `recordCompleted()` could land `completed_keys` as a JSON string scalar instead
+   of a JSON array through the raw SQL binding path, tripping the CHECK
+   `jsonb_typeof(completed_keys) = 'array'`.
+2. The host's Supabase direct write lane (`:5432`) is intermittently flaky, so
+   checkpoint writes could also die with `ECONNREFUSED` even when the read pool
+   stayed healthy.
+The old checkpoint-corruption story was symptom-level. The live root cause was the
+checkpoint write path itself.
+**Drop-when:** upstream writes `recordCompleted` through the wrapped/extracted JSONB
+shape AND adds a bounded read-pool fallback for checkpoint writes after direct-path
+failure. Check:
+`git show origin/master:src/core/op-checkpoint.ts | sed -n '37,60p;195,235p;243,320p'`
+-- retire ONLY if all three are present:
+- `durableWrite(..., fallbackFn?)` (or equivalent fallback structure),
+- `($3::jsonb)->'keys'` with a wrapped payload for `recordCompleted`,
+- fallback `executeRaw(...)` paths for append/clear (and sigterm append or an
+  equivalent recovery path).
+**Change:** wrapped `recordCompleted` payloads as `{ keys: [...] }` and extracted
+`($3::jsonb)->'keys'` server-side so positional binding always lands as a real JSONB
+array; extended durable checkpoint writes with a read-pool fallback when
+`executeRawDirect(...)` fails, covering `recordCompleted`, `appendCompleted`,
+`appendCompletedOnce`, and `clearOpCheckpoint`.
+**Why:** checkpoint durability is not optional. A sync that cannot bank progress
+or persist its pinned target is fake-resumable and will keep dying at the same
+write chokepoint.
+**How to recreate:** in `src/core/op-checkpoint.ts`, add the optional fallback lane
+to `durableWrite`, wrap `recordCompleted` payloads under `keys`, switch SQL writes
+to `($3::jsonb)->'keys'`, and add read-pool fallback calls alongside every direct
+checkpoint write/delete path. Keep tests covering the scalar-vs-array regression
+and direct-path recovery.
