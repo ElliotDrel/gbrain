@@ -37,6 +37,7 @@ async function durableWrite(
   key: OpCheckpointKey,
   label: string,
   fn: () => Promise<unknown>,
+  fallbackFn?: () => Promise<unknown>,
 ): Promise<boolean> {
   try {
     await withRetry(fn, BULK_RETRY_OPTS);
@@ -44,6 +45,20 @@ async function durableWrite(
   } catch (e) {
     if (e instanceof RetryAbortError) throw e;
     console.error(`[op-checkpoint] ${label} failed (${key.op}, ${key.fingerprint}):`, (e as Error).message);
+    if (!fallbackFn) return false;
+    try {
+      await withRetry(fallbackFn, BULK_RETRY_OPTS);
+      console.error(
+        `[op-checkpoint] ${label} recovered on read pool (${key.op}, ${key.fingerprint}) after direct-path failure.`,
+      );
+      return true;
+    } catch (fallbackErr) {
+      if (fallbackErr instanceof RetryAbortError) throw fallbackErr;
+      console.error(
+        `[op-checkpoint] ${label} read-pool fallback failed (${key.op}, ${key.fingerprint}):`,
+        (fallbackErr as Error).message,
+      );
+    }
     return false;
   }
 }
@@ -180,18 +195,31 @@ export async function recordCompleted(
   // extract-conversation-facts serialize a MUTABLE map through here and rely on
   // stale keys being REMOVED; an append would make them unremovable. The full
   // set lands in the parent `completed_keys` JSONB column via a single UPSERT —
-  // exactly as before. JSON.stringify into `$3::jsonb` is correct (the text→jsonb
-  // cast yields a proper array; NOT the double-encode trap, which is the template
-  // form). Sync uses `appendCompleted` (below) instead, never this.
+  // exactly as before. The payload is wrapped under `{ keys: [...] }` and
+  // extracted with `($3::jsonb)->'keys'` so positional binding always lands as
+  // a real JSONB array on both Postgres and PGLite. Binding the top-level array
+  // directly re-enters the postgres.js array-vs-json ambiguity that can turn
+  // `["a"]` into a JSON string scalar at write time, which then trips the
+  // `op_checkpoints_completed_keys_array` CHECK. Sync uses `appendCompleted`
+  // (below) instead, never this.
   const sorted = [...keys].sort();
+  const wrapped = { keys: sorted };
   return durableWrite(engine, key, 'write', () =>
     engine.executeRawDirect(
       `INSERT INTO op_checkpoints (op, fingerprint, completed_keys, updated_at)
-       VALUES ($1, $2, $3::jsonb, now())
+       VALUES ($1, $2, ($3::jsonb)->'keys', now())
        ON CONFLICT (op, fingerprint) DO UPDATE
          SET completed_keys = EXCLUDED.completed_keys,
              updated_at     = now()`,
-      [key.op, key.fingerprint, JSON.stringify(sorted)],
+      [key.op, key.fingerprint, wrapped],
+    ), () =>
+    engine.executeRaw(
+      `INSERT INTO op_checkpoints (op, fingerprint, completed_keys, updated_at)
+       VALUES ($1, $2, ($3::jsonb)->'keys', now())
+       ON CONFLICT (op, fingerprint) DO UPDATE
+         SET completed_keys = EXCLUDED.completed_keys,
+             updated_at     = now()`,
+      [key.op, key.fingerprint, wrapped],
     ));
 }
 
@@ -215,7 +243,8 @@ export async function appendCompleted(
   for (let i = 0; i < deltaKeys.length; i += APPEND_CHUNK) {
     const chunk = deltaKeys.slice(i, i + APPEND_CHUNK);
     const ok = await durableWrite(engine, key, 'append', () =>
-      engine.executeRawDirect(APPEND_PATHS_SQL, [key.op, key.fingerprint, chunk]));
+      engine.executeRawDirect(APPEND_PATHS_SQL, [key.op, key.fingerprint, chunk]), () =>
+      engine.executeRaw(APPEND_PATHS_SQL, [key.op, key.fingerprint, chunk]));
     if (!ok) return false;
   }
   return true;
@@ -240,7 +269,19 @@ export async function appendCompletedOnce(
     return true;
   } catch (e) {
     console.error(`[op-checkpoint] sigterm-append failed (${key.op}, ${key.fingerprint}):`, (e as Error).message);
-    return false;
+    try {
+      await engine.executeRaw(APPEND_PATHS_SQL, [key.op, key.fingerprint, deltaKeys]);
+      console.error(
+        `[op-checkpoint] sigterm-append recovered on read pool (${key.op}, ${key.fingerprint}) after direct-path failure.`,
+      );
+      return true;
+    } catch (fallbackErr) {
+      console.error(
+        `[op-checkpoint] sigterm-append read-pool fallback failed (${key.op}, ${key.fingerprint}):`,
+        (fallbackErr as Error).message,
+      );
+      return false;
+    }
   }
 }
 
@@ -264,9 +305,17 @@ export async function clearOpCheckpoint(
     engine.executeRawDirect(
       `DELETE FROM op_checkpoints WHERE op = $1 AND fingerprint = $2`,
       [key.op, key.fingerprint],
+    ), () =>
+    engine.executeRaw(
+      `DELETE FROM op_checkpoints WHERE op = $1 AND fingerprint = $2`,
+      [key.op, key.fingerprint],
     ));
   await durableWrite(engine, key, 'clear-children', () =>
     engine.executeRawDirect(
+      `DELETE FROM op_checkpoint_paths WHERE op = $1 AND fingerprint = $2`,
+      [key.op, key.fingerprint],
+    ), () =>
+    engine.executeRaw(
       `DELETE FROM op_checkpoint_paths WHERE op = $1 AND fingerprint = $2`,
       [key.op, key.fingerprint],
     ));
