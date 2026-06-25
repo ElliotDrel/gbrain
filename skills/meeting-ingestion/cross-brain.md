@@ -7,7 +7,7 @@ session, or a Sophia 1-on-1 that's mostly buildpurdue but also personal). This i
 one-on-one) is chosen independently for *each* brain's page.
 
 This mode only applies when the human signals the meeting spans both brains. The
-auto-monitor (`scripts/fathom/poll.mjs`) never triggers it — it routes by title to a
+auto-monitor (`skills/fathom-extract/scripts/poll.mjs`) never triggers it — it routes by title to a
 single brain and cannot know a meeting is cross-brain.
 
 ## Principle: two pages, two lenses, one transcript
@@ -72,7 +72,7 @@ re-deliver.
 
 ## Transcript handling (deterministic, both brains)
 
-- The raw transcript is managed deterministically — fetched via `scripts/fathom/get.mjs`
+- The raw transcript is managed deterministically — fetched via `skills/fathom-extract/scripts/get.mjs`
   (and `get.mjs merge <id1> <id2> …` for a meeting Fathom split across recordings). Never
   hand-edit or hand-merge transcript content.
 - Copy the **same** raw transcript file into **both** brains' `.raw/` sidecars verbatim
