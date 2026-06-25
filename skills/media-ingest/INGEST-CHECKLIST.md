@@ -23,10 +23,23 @@ page. "the raw" = `sources/social/<platform>-<id>.txt`.
 - [ ] **C2** Single-source page has ZERO per-line `[Source: ...]` tags (those are only for multi-source interleaving).
 - [ ] **C3** A bottom `## Sources` section exists with a reference-style link (`[label]: <raw path>`) pointing at the RAW transcript (not a timestamp/line).
 
-## D. Entity propagation (the Iron Law)
+## D. Entity propagation (the Iron Law) + the create/link/reference decision
 - [ ] **D1** `## People Mentioned` and/or `## Companies Mentioned` sections exist when the content names any.
 - [ ] **D2** Every named person/company that HAS a brain page is back-linked from the page.
-- [ ] **D3** Each such entity page has a back-link to this page AND a timeline entry. (Spot-check the creator.)
+- [ ] **D3** Each such entity page has a back-link to this page AND a timeline entry — **bidirectional** (page↔entity). (Spot-check the creator especially; the common bug is one-directional.)
+
+### D-flow — run this for EACH person/company named (incl. the creator)
+Two independent decisions: **(A) create a page?** = notability. **(B) back-link?** = always, if a page exists.
+
+1. **Already has a brain page?**
+   - **Yes** → MUST bidirectionally back-link it (D2/D3). No new page. Done.
+2. **No page yet?** → Apply the **Notability Gate** (`skills/_brain-filing-rules.md` + `conventions/quality.md`):
+   - **Will Elliot interact with them again / relevant to his work, investments, interests?** OR **is it a recurring influence he learns from** (a creator/author/figure he keeps saving)?
+     - **Yes, real relationship / will interact** → create a NORMAL entity page (no flag) + back-link.
+     - **Yes, but learn-about-only** (public figure, author, creator he won't personally deal with) → create a **REFERENCE** page: `gbrain reference <slug>` or `reference: true` in frontmatter. Full page benefits (searchable, enrichable, linkable); only exempt from coverage nudges. This is how IRL people vs read-about figures are distinguished. (`conventions/reference-entities.md`.)
+     - **No — one-off, not recurring, not relevant** (random creator, a meme/pet account) → **no page**; just name them in prose. When in doubt, DON'T create.
+
+> **Promotion later:** notability is dynamic. If a creator you skipped recurs (you save them again), promote them: create the page (usually `reference: true`), then back-link it from every existing page that cites their raws + add timeline entries. The social audit flags `creator with >=2 pages but no entity page` as a promotion candidate so this isn't left to memory.
 
 ## E. "Why I Saved This"
 - [ ] **E1** If present, it reads as Elliot's real reason — NOT invented, NOT a placeholder (`_Pending_`, "TODO", a guessed motive). (Hard guardrail 1.)
