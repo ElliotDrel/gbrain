@@ -212,6 +212,14 @@ full metadata object (author, stats, duration, `createdAt`, `_transcript_state`)
 the description and plain-text transcript. That is your source material. (Keep it as-is per
 hard guardrail 3.)
 
+**On-screen-text case:** if it is a short video (`duration` <= ~90s) whose transcript is empty
+or trivial (e.g. `Let's rock`), the real content is burned-in on-screen text. Recover it before
+writing the page: run the deterministic frame extractor, read the frames yourself, and append the
+text to the raw. Full procedure (trigger, exact commands, persist format, do/don't) lives in its
+own file -- **[ONSCREEN-TEXT.md](ONSCREEN-TEXT.md)** -- driven by
+`scripts/onscreen-frames.mjs` (download + fixed-fps frames -> JSON manifest; you read each frame
+as an image). Proof/benchmarks: `docs/onscreen-text-extraction-FINAL-REPORT.md`.
+
 ## Phase 3 -- Write the brain page
 
 <concept_dedup>
