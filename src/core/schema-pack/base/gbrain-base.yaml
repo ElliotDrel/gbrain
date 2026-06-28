@@ -161,6 +161,19 @@ page_types:
     extractable: false
     expert_routing: false
 
+  - name: location
+    primitive: entity
+    path_prefixes:
+      - locations/
+      - places/
+    aliases:
+      - place
+      - state
+      - city
+      - region
+    extractable: false
+    expert_routing: false
+
   - name: project
     primitive: concept
     path_prefixes:
