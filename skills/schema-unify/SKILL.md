@@ -1,6 +1,6 @@
 ---
 name: schema-unify
-description: Migrate a brain from gbrain-base (or any pack) to gbrain-base-v2's 14-canonical-type taxonomy via gbrain onboard --check + the unify-types Minion handler. Collapses 94 noisy types to 15 canonical with subtypes, alias rows, and link rows. Triggers when an agent notices pack_upgrade_available, type_proliferation, or asks "what is the canonical taxonomy / how do I clean up my page types".
+description: Migrate a brain from gbrain-base (or any pack) to gbrain-base-v2's 15-canonical-type taxonomy via gbrain onboard --check + the unify-types Minion handler. Collapses 94 noisy types to 15 canonical with subtypes, alias rows, and link rows. Triggers when an agent notices pack_upgrade_available, type_proliferation, or asks "what is the canonical taxonomy / how do I clean up my page types".
 brain_first: exempt
 tools:
   - gbrain onboard --check
@@ -28,7 +28,7 @@ triggers:
 
 # Schema Unification (gbrain-base → gbrain-base-v2)
 
-v0.41.22 ships **gbrain-base-v2** — a 15-type DRY/MECE taxonomy (14 canonical + `note` catch-all) — as the install default for new brains. Existing brains on `gbrain-base` can opt in via the `pack_upgrade_available` onboard finding + the `unify-types` PROTECTED Minion handler.
+v0.41.22 ships **gbrain-base-v2** — a 16-type DRY/MECE taxonomy (15 canonical + `note` catch-all; `location` was added after the original 14-canonical ship) — as the install default for new brains. Existing brains on `gbrain-base` can opt in via the `pack_upgrade_available` onboard finding + the `unify-types` PROTECTED Minion handler.
 
 This skill is the playbook for that migration.
 
@@ -45,7 +45,7 @@ This skill is ABOUT the brain's shape — it can't depend on the brain it's resh
 
 ## Mental model (one paragraph)
 
-A production gbrain brain accreted **94 distinct `pages.type` values** over years of ingestion: tweet / tweet-thread / tweet-bundle / tweet-single / media/x-tweet/bundle / tweet-stub all coexisting; 5.5K concept-redirect pages; atom-partner-link pages that should be links; civic / framework / insight / memo / anecdote one-offs. The cure: collapse to **15 canonical types** (person, company, media, tweet, social-digest, analysis, atom, concept, source, deal, email, slack, writing, project, note) with subtypes/format/origin pushed to frontmatter, alias-rows for redirects, real link-rows for edge-shaped pages, and a catch-all that bins long-tail unknowns to `note` with `frontmatter.legacy_type = <original>` for rollback.
+A production gbrain brain accreted **94 distinct `pages.type` values** over years of ingestion: tweet / tweet-thread / tweet-bundle / tweet-single / media/x-tweet/bundle / tweet-stub all coexisting; 5.5K concept-redirect pages; atom-partner-link pages that should be links; civic / framework / insight / memo / anecdote one-offs. The cure: collapse to **16 types** (15 canonical + `note`: person, company, location, media, tweet, social-digest, analysis, atom, concept, source, deal, email, slack, writing, project, note) with subtypes/format/origin pushed to frontmatter, alias-rows for redirects, real link-rows for edge-shaped pages, and a catch-all that bins long-tail unknowns to `note` with `frontmatter.legacy_type = <original>` for rollback.
 
 ## Workflow
 
@@ -233,7 +233,7 @@ Final celebration summary to stderr:
   gbrain-base-v2 migration complete
 ═══════════════════════════════════════════════════════════
   Before: 94 distinct page types
-  After:  15 canonical types
+  After:  16 canonical types
   Retyped:      25,632 pages
   Aliased:       5,521 redirects → slug_aliases table
   Linkified:        65 ghost pages → real link rows

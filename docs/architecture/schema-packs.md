@@ -25,7 +25,7 @@ Two bundled packs:
 - **`gbrain-recommended`** — extends `gbrain-base` with the 13 additional
   directories described in `docs/GBRAIN_RECOMMENDED_SCHEMA.md`: deal,
   meeting, concept, project, source, daily, personal, civic, original,
-  place, trip, conversation, writing. If you like the documented
+  location, trip, conversation, writing. If you like the documented
   operational-brain pattern, activate this with:
 
   ```bash

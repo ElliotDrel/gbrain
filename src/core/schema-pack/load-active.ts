@@ -108,7 +108,7 @@ function defaultPackLocator(name: string): string | null {
     'gbrain-investor',
     'gbrain-engineer',
     'gbrain-everything',
-    // v0.42 type-unification: 15-type canonical successor to gbrain-base.
+    // v0.42 type-unification: 16-type canonical successor to gbrain-base.
     // Ships as install default (Lane E T17) + via gbrain onboard pack
     // upgrade flow (the unify-types Minion handler).
     'gbrain-base-v2',

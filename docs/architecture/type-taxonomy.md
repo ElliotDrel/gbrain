@@ -1,8 +1,9 @@
 # Type Taxonomy (v0.41.22: gbrain-base-v2)
 
-> The 14-canonical-type DRY/MECE taxonomy shipped in v0.41.22. Predecessor
-> `gbrain-base` (24 types) stays bundled for back-compat; v0.42+ installs
-> default to `gbrain-base-v2`.
+> The 15-canonical-type DRY/MECE taxonomy (gbrain-base-v2). Originally
+> shipped with 14 canonical types in v0.41.22; `location` was added
+> later. Predecessor `gbrain-base` (24 types) stays bundled for
+> back-compat; v0.42+ installs default to `gbrain-base-v2`.
 
 ## Why
 
@@ -24,16 +25,17 @@ downstream feature degrades:
   counts without adding knowledge value.
 
 Issue #1479 catalogues the 9 clusters with exact counts. This doc is
-the response: a coherent 14-type taxonomy with subtypes/format/origin
+the response: a coherent 15-type taxonomy with subtypes/format/origin
 pushed to frontmatter, alias-table rows for redirects, real link-table
 rows for edge-shaped pages.
 
-## The 14 canonical types (+ `note` catch-all)
+## The 15 canonical types (+ `note` catch-all)
 
 | Type | Primitive | What it holds | Examples |
 |------|-----------|---------------|----------|
 | `person` | entity | People | Founders, partners, individuals |
 | `company` | entity | Companies, products, orgs (subtype-distinguished) | Companies, YC-companies, products |
+| `location` | entity | States, cities, regions, places | California, Indiana, San Francisco, Bay Area |
 | `media` | media | Articles, videos, essays, books, podcasts (subtype-distinguished) | Substack posts, YouTube videos, books |
 | `tweet` | media | Twitter posts (single/bundle/stub subtype) | Single tweets, threads, bundles |
 | `social-digest` | temporal | Period-grouped social summaries (daily/monthly) | X account daily digests |
@@ -48,7 +50,7 @@ rows for edge-shaped pages.
 | `project` | concept | Initiatives, workstreams | Internal projects |
 | `note` | concept | **Catch-all** for one-offs (legacy_type preserved) | Memos, anecdotes, insights, etc. |
 
-15 types total (14 canonical + `note`). The catch-all retype rule
+16 types total (15 canonical + `note`). The catch-all retype rule
 binds any uncovered legacy type to `note` with
 `frontmatter.legacy_type = <original>` preserved for rollback.
 
