@@ -218,6 +218,11 @@ report["unreviewed_drops"] = unreviewed_drops
 # clip id, and confirm a raw exists. URLs sent but with NO raw = silent send->fetch drops.
 URL_RE = re.compile(r'https?://[^\s)>\]"\']+', re.I)
 SOCIAL_HOST = re.compile(r'(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|x\.com|twitter\.com|facebook\.com|fb\.watch)', re.I)
+# Synthetic clip ids that show up in trajectory logs from plugin/skill TESTS (not real
+# content Elliot shared). They are never expected to have a raw, so they pollute the
+# send->fetch funnel forever. Filter them out of the funnel rather than rewriting the
+# real session transcript that legitimately contains the test prompt.
+IGNORE_CLIP_IDS = {"test123"}
 def clip_id(u):
     u = u.split("?")[0].rstrip("/")
     m = (re.search(r'instagram\.com/(?:reels?|p|tv)/([A-Za-z0-9_-]+)', u, re.I)
@@ -253,6 +258,8 @@ for jf in glob.glob(os.path.join(SESSIONS_DIR, "*.trajectory.jsonl")):
                 continue
             cid = clip_id(u)
             if not cid:
+                continue
+            if cid in IGNORE_CLIP_IDS:
                 continue
             e = sent.setdefault(cid, {"url": u, "count": 0})
             e["count"] += 1
