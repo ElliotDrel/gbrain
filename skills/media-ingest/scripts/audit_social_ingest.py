@@ -218,11 +218,15 @@ report["unreviewed_drops"] = unreviewed_drops
 # clip id, and confirm a raw exists. URLs sent but with NO raw = silent send->fetch drops.
 URL_RE = re.compile(r'https?://[^\s)>\]"\']+', re.I)
 SOCIAL_HOST = re.compile(r'(instagram\.com|tiktok\.com|youtube\.com|youtu\.be|x\.com|twitter\.com|facebook\.com|fb\.watch)', re.I)
-# Synthetic clip ids that show up in trajectory logs from plugin/skill TESTS (not real
-# content Elliot shared). They are never expected to have a raw, so they pollute the
-# send->fetch funnel forever. Filter them out of the funnel rather than rewriting the
-# real session transcript that legitimately contains the test prompt.
-IGNORE_CLIP_IDS = {"test123"}
+# Clip ids that should not keep resurfacing as funnel misses. This list is intentionally
+# tiny and explicit:
+# - synthetic test ids from plugin/skill checks
+# - items Elliot explicitly parked for manual/later ingest, so the weekly audit should
+#   not keep nagging about them until he re-sends them on purpose
+IGNORE_CLIP_IDS = {
+    "test123",
+    "2061232624706650337",  # David Epstein X post parked by Elliot for manual later ingest
+}
 def clip_id(u):
     u = u.split("?")[0].rstrip("/")
     m = (re.search(r'instagram\.com/(?:reels?|p|tv)/([A-Za-z0-9_-]+)', u, re.I)
