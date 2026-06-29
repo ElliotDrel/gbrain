@@ -19,13 +19,10 @@
 //
 // Exit codes: 0 ok, 2 bad args, 3 missing tool, 4 download/input invalid, 5 extract failed.
 
-import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-
-const execFile = promisify(execFileCb);
+import { runAllowedCommand } from '../../../lib/allowed-child-process.mjs';
 
 // The durable ffmpeg/ffprobe/yt-dlp on this box live in ~/.local/bin (no sudo; see
 // FINAL-REPORT section 3). Put them on PATH regardless of caller env.
@@ -57,7 +54,7 @@ function parseArgs(argv) {
 // Present AND working: pass each tool its OWN correct version flag and require a
 // clean exit. ENOENT (absent) and a nonzero exit (broken) both count as "no".
 async function have(cmd, flag) {
-  try { await execFile(cmd, [flag]); return true; } catch { return false; }
+  try { await runAllowedCommand(cmd, [flag]); return true; } catch { return false; }
 }
 
 async function hasVideoStream(mp4) {
@@ -65,7 +62,7 @@ async function hasVideoStream(mp4) {
   // that is size>0 but has no video stream. ffprobe says so cleanly before ffmpeg
   // would die with a confusing "moov atom not found".
   try {
-    const { stdout } = await execFile('ffprobe', ['-v', 'error', '-select_streams', 'v:0',
+    const { stdout } = await runAllowedCommand('ffprobe', ['-v', 'error', '-select_streams', 'v:0',
       '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', mp4]);
     return stdout.includes('video');
   } catch { return false; }
@@ -101,12 +98,12 @@ async function main() {
     if (!(await have('yt-dlp', '--version'))) fail(3, 'yt-dlp unavailable and input is a URL');
     let dlErr = null;
     try {
-      await execFile('yt-dlp', ['--no-warnings', '-f', 'mp4/best', '-o', mp4, args.input],
+      await runAllowedCommand('yt-dlp', ['--no-warnings', '-f', 'mp4/best', '-o', mp4, args.input],
         { maxBuffer: 64 * 1024 * 1024, timeout: 120000 });
     } catch (e) { dlErr = e; }
     if (dlErr || !fs.existsSync(mp4) || fs.statSync(mp4).size === 0) {
       if (args.videoUrl) {
-        try { await execFile('curl', ['-fsSL', '-o', mp4, args.videoUrl], { timeout: 120000 }); }
+        try { await runAllowedCommand('curl', ['-fsSL', '-o', mp4, args.videoUrl], { timeout: 120000 }); }
         catch (e2) { fail(4, `download failed (yt-dlp + --video-url fallback): ${e2.message}`); }
       } else {
         const tail = dlErr ? String(dlErr.message).trim().split('\n').pop() : 'empty download';
@@ -125,7 +122,7 @@ async function main() {
   // 2. Sample fixed-fps frames (robust for overlay-text reels; see FINAL-REPORT 4.2).
   //    %04d so frame names stay lexically sortable past 99; numeric sort regardless.
   try {
-    await execFile('ffmpeg', ['-v', 'error', '-i', mp4, '-vf', `fps=${args.fps}`,
+    await runAllowedCommand('ffmpeg', ['-v', 'error', '-i', mp4, '-vf', `fps=${args.fps}`,
       path.join(frameDir, 'f_%04d.png')], { timeout: 180000 });
   } catch (e) {
     fail(5, `ffmpeg frame extraction failed: ${e.message}`);

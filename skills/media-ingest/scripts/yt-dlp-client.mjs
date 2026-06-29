@@ -6,11 +6,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
 import { parseWebVtt } from './provider-client.mjs';
-
-const execFile = promisify(execFileCb);
+import { runAllowedCommand } from '../../../lib/allowed-child-process.mjs';
 const CANDIDATES = [
   { cmd: 'yt-dlp', prefix: [] },
   { cmd: 'python3', prefix: ['-m', 'yt_dlp'] },
@@ -101,10 +98,9 @@ function plainOf(segments) {
 
 async function runCandidate(candidate, args) {
   try {
-    const result = await execFile(candidate.cmd, [...candidate.prefix, ...args], {
+    const result = await runAllowedCommand(candidate.cmd, [...candidate.prefix, ...args], {
       timeout: 120_000,
       maxBuffer: 20 * 1024 * 1024,
-      windowsHide: true,
     });
     return { ok: true, ...result };
   } catch (error) {

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { runAllowedCommandSync } from '../../../lib/allowed-child-process.mjs';
 
 const scriptPath = fileURLToPath(new URL('./provider-keys.mjs', import.meta.url));
 
@@ -21,7 +21,7 @@ function runProviderKeys({ dotEnv = '', openclawJson = null, env = {} } = {}) {
       JSON.stringify(openclawJson),
     );
   }
-  const result = spawnSync(process.execPath, [scriptPath], {
+  const result = runAllowedCommandSync(process.execPath, [scriptPath], {
     env: {
       ...process.env,
       HOME: home,
