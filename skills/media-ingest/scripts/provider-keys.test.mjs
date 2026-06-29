@@ -22,6 +22,7 @@ function runProviderKeys({ dotEnv = '', openclawJson = null, env = {} } = {}) {
     );
   }
   const result = runAllowedCommandSync(process.execPath, [scriptPath], {
+    allowNodeEntrypoint: scriptPath,
     env: {
       ...process.env,
       HOME: home,
