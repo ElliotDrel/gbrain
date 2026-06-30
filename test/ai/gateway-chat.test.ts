@@ -5,7 +5,7 @@
  *   - chat() resolves provider:model strings + aliases
  *   - assertTouchpoint surfaces chat-only providers correctly
  *   - getChatModel() default + override
- *   - chat_fallback_chain plumbing (config plumbing only — chatWithFallback ships in commit 3)
+ *   - chat_fallback_chain plumbing + runtime execution
  *   - new openai-compat recipes (deepseek, groq, together) parse + resolve
  *   - new ChatTouchpoint shape: supports_subagent_loop, supports_prompt_cache
  *   - mapStopReason via the chat() boundary (mocked client) — refusal / content_filter / tool_calls / end / length
@@ -23,9 +23,11 @@ import {
   isAvailable,
   getChatModel,
   getChatFallbackChain,
+  chat,
+  __setChatTransportForTests,
 } from '../../src/core/ai/gateway.ts';
 import { parseModelId, resolveRecipe, assertTouchpoint } from '../../src/core/ai/model-resolver.ts';
-import { AIConfigError } from '../../src/core/ai/errors.ts';
+import { AIConfigError, AITransientError } from '../../src/core/ai/errors.ts';
 import { listRecipes, getRecipe } from '../../src/core/ai/recipes/index.ts';
 
 describe('chat touchpoint — recipe registry', () => {
@@ -131,7 +133,10 @@ describe('chat touchpoint — model resolver + aliases (Codex F-OV-5)', () => {
 });
 
 describe('chat touchpoint — gateway config plumbing', () => {
-  beforeEach(() => resetGateway());
+  beforeEach(() => {
+    resetGateway();
+    __setChatTransportForTests(null);
+  });
 
   test('default chat_model is anthropic:claude-sonnet-4-6', () => {
     configureGateway({ env: {} });
@@ -191,6 +196,118 @@ describe('chat touchpoint — config alias resolution', () => {
       env: { ANTHROPIC_API_KEY: 'fake' },
     });
     expect(isAvailable('chat')).toBe(true);
+  });
+});
+
+describe('chat touchpoint — fallback chain execution', () => {
+  beforeEach(() => {
+    resetGateway();
+    __setChatTransportForTests(null);
+  });
+
+  test('does not hide provider config errors behind the fallback chain', async () => {
+    const seen: string[] = [];
+    configureGateway({
+      chat_model: 'anthropic:claude-opus-4-7',
+      chat_fallback_chain: ['openai:gpt-5.4', 'openai:gpt-5.4-mini'],
+      env: {},
+    });
+    __setChatTransportForTests(async (opts) => {
+      seen.push(opts.model ?? '<unset>');
+      if (opts.model === 'anthropic:claude-opus-4-7') {
+        throw new AIConfigError('Anthropic chat requires ANTHROPIC_API_KEY.');
+      }
+      return {
+        text: 'ok',
+        blocks: [{ type: 'text', text: 'ok' }],
+        stopReason: 'end',
+        usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_creation_tokens: 0 },
+        model: opts.model ?? 'unknown',
+        providerId: 'openai',
+      };
+    });
+
+    await expect(
+      chat({
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
+      }),
+    ).rejects.toThrow('ANTHROPIC_API_KEY');
+    expect(seen).toEqual(['anthropic:claude-opus-4-7']);
+  });
+
+  test('falls back to the configured chain on transient provider errors', async () => {
+    const seen: string[] = [];
+    configureGateway({
+      chat_model: 'anthropic:claude-opus-4-7',
+      chat_fallback_chain: ['openai:gpt-5.4', 'openai:gpt-5.4-mini'],
+      env: {},
+    });
+    __setChatTransportForTests(async (opts) => {
+      seen.push(opts.model ?? '<unset>');
+      if (opts.model === 'anthropic:claude-opus-4-7') {
+        throw new AITransientError('synthetic timeout');
+      }
+      return {
+        text: 'ok',
+        blocks: [{ type: 'text', text: 'ok' }],
+        stopReason: 'end',
+        usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_creation_tokens: 0 },
+        model: opts.model ?? 'unknown',
+        providerId: 'openai',
+      };
+    });
+
+    const result = await chat({
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
+    });
+
+    expect(seen).toEqual(['anthropic:claude-opus-4-7', 'openai:gpt-5.4']);
+    expect(result.model).toBe('openai:gpt-5.4');
+    expect(result.text).toBe('ok');
+  });
+
+  test('falls back when the primary model returns a refusal stop reason', async () => {
+    const seen: string[] = [];
+    configureGateway({
+      chat_model: 'anthropic:claude-opus-4-7',
+      chat_fallback_chain: ['openai:gpt-5.4'],
+      env: {},
+    });
+    __setChatTransportForTests(async (opts) => {
+      seen.push(opts.model ?? '<unset>');
+      if (opts.model === 'anthropic:claude-opus-4-7') {
+        return {
+          text: '',
+          blocks: [],
+          stopReason: 'refusal',
+          usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_creation_tokens: 0 },
+          model: opts.model,
+          providerId: 'anthropic',
+        };
+      }
+      return {
+        text: 'fallback answer',
+        blocks: [{ type: 'text', text: 'fallback answer' }],
+        stopReason: 'end',
+        usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_creation_tokens: 0 },
+        model: opts.model ?? 'unknown',
+        providerId: 'openai',
+      };
+    });
+
+    const result = await chat({
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'ping' }] }],
+    });
+
+    expect(seen).toEqual(['anthropic:claude-opus-4-7', 'openai:gpt-5.4']);
+    expect(result.model).toBe('openai:gpt-5.4');
+    expect(result.text).toBe('fallback answer');
+    expect(result.usage).toEqual({
+      input_tokens: 2,
+      output_tokens: 2,
+      cache_read_tokens: 0,
+      cache_creation_tokens: 0,
+    });
   });
 });
 

@@ -23,6 +23,8 @@ import {
   withBudgetTracker,
   getCurrentBudgetTracker,
   __setChatTransportForTests,
+  configureGateway,
+  resetGateway,
   type ChatOpts,
   type ChatResult,
 } from '../../../src/core/ai/gateway.ts';
@@ -31,6 +33,7 @@ import {
   BudgetExhausted,
   _resetBudgetTrackerWarningsForTest,
 } from '../../../src/core/budget/budget-tracker.ts';
+import { AITransientError } from '../../../src/core/ai/errors.ts';
 
 let tmp: string;
 let auditPath: string;
@@ -43,6 +46,7 @@ beforeEach(() => {
 
 afterEach(() => {
   __setChatTransportForTests(null);
+  resetGateway();
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -173,6 +177,106 @@ describe('withBudgetTracker — scope semantics', () => {
       expect(caught).toBeInstanceOf(BudgetExhausted);
       expect((caught as BudgetExhausted).reason).toBe('cost');
     });
+  });
+
+  test('fallback attempts reserve budget per model before the next hop', async () => {
+    const tracker = new BudgetTracker({ maxCostUsd: 0.001, label: 'fallback-reserve', auditPath });
+    const seen: string[] = [];
+    configureGateway({
+      chat_model: 'anthropic:claude-haiku-4-5-20251001',
+      chat_fallback_chain: ['anthropic:claude-opus-4-7'],
+      env: {},
+    });
+    __setChatTransportForTests(async (opts) => {
+      seen.push(opts.model ?? '<unset>');
+      if (opts.model === 'anthropic:claude-haiku-4-5-20251001') {
+        throw new AITransientError('synthetic timeout');
+      }
+      return {
+        text: 'should not run',
+        blocks: [{ type: 'text', text: 'should not run' }],
+        stopReason: 'end',
+        model: opts.model ?? 'unknown',
+        providerId: 'anthropic',
+        usage: {
+          input_tokens: 100,
+          output_tokens: 100,
+          cache_read_tokens: 0,
+          cache_creation_tokens: 0,
+        },
+      };
+    });
+
+    let caught: unknown = null;
+    await withBudgetTracker(tracker, async () => {
+      try {
+        await chat({
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 100,
+        });
+      } catch (err) {
+        caught = err;
+      }
+    });
+
+    expect(caught).toBeInstanceOf(BudgetExhausted);
+    expect((caught as BudgetExhausted).reason).toBe('cost');
+    expect(seen).toEqual(['anthropic:claude-haiku-4-5-20251001']);
+  });
+
+  test('fallback test transport records each successful hop for budget accounting', async () => {
+    const tracker = new BudgetTracker({ maxCostUsd: 1, label: 'fallback-records', auditPath });
+    configureGateway({
+      chat_model: 'anthropic:claude-haiku-4-5-20251001',
+      chat_fallback_chain: ['anthropic:claude-opus-4-7'],
+      env: {},
+    });
+    __setChatTransportForTests(async (opts) => {
+      if (opts.model === 'anthropic:claude-haiku-4-5-20251001') {
+        return {
+          text: '',
+          blocks: [],
+          stopReason: 'refusal',
+          model: opts.model,
+          providerId: 'anthropic',
+          usage: {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+          },
+        };
+      }
+      return {
+        text: 'fallback answer',
+        blocks: [{ type: 'text', text: 'fallback answer' }],
+        stopReason: 'end',
+        model: opts.model ?? 'unknown',
+        providerId: 'anthropic',
+        usage: {
+          input_tokens: 20,
+          output_tokens: 10,
+          cache_read_tokens: 0,
+          cache_creation_tokens: 0,
+        },
+      };
+    });
+
+    let result: ChatResult | null = null;
+    await withBudgetTracker(tracker, async () => {
+      result = await chat({
+        messages: [{ role: 'user', content: 'hi' }],
+        maxTokens: 100,
+      });
+    });
+
+    expect(result?.usage).toEqual({
+      input_tokens: 30,
+      output_tokens: 15,
+      cache_read_tokens: 0,
+      cache_creation_tokens: 0,
+    });
+    expect(tracker.snapshot().callsRecorded).toBe(2);
   });
 });
 

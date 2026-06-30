@@ -2706,6 +2706,14 @@ function mapStopReason(
   return 'other';
 }
 
+function shouldFallbackFromChatResult(result: ChatResult): boolean {
+  return result.stopReason === 'refusal' || result.stopReason === 'content_filter';
+}
+
+function shouldFallbackFromChatError(err: unknown): boolean {
+  return err instanceof AITransientError;
+}
+
 /**
  * Run one chat completion turn. Provider-neutral wrapper over Vercel AI SDK's
  * `generateText`. Tool-use blocks are normalized; cache_control markers are
@@ -2792,6 +2800,10 @@ async function classifyGatewayGuardrail(input: {
 export async function chat(opts: ChatOpts): Promise<ChatResult> {
   const tracker = __budgetStore.getStore() ?? null;
   const modelStrEarly = opts.model ?? getChatModel();
+  const fallbackModels = opts.model
+    ? []
+    : getChatFallbackChain().filter((m) => !!m && m !== modelStrEarly);
+  const attemptModels = [modelStrEarly, ...fallbackModels];
 
   // Guardrail seam: classify ONLY the latest user message before provider
   // inference. Observe-only / fail-open; no-op without a registered guardrail.
@@ -2812,62 +2824,79 @@ export async function chat(opts: ChatOpts): Promise<ChatResult> {
   const estimatedInputTokens = estimateChatInputTokens(opts);
   const maxOutputTokens = opts.maxTokens ?? 4096;
 
-  // TX5: reserve BEFORE the provider call. Throws BudgetExhausted on cost,
-  // runtime, or no_pricing (when cap is set). Pre-resolution model id is
-  // fine here — resolveChatProvider would map aliases the same way for the
-  // cost lookup. record() below uses the real result.model.
-  if (tracker) {
+  const reserveChatAttemptBudget = (modelId: string): void => {
+    if (!tracker) return;
     tracker.reserve({
-      modelId: modelStrEarly,
+      modelId,
       estimatedInputTokens,
       maxOutputTokens,
       kind: 'chat' as BudgetKind,
       label: 'gateway.chat',
     });
-  }
+  };
 
   // Test seam: when a test transport is installed, route through it without
   // touching provider resolution, AI SDK, or any network. See
   // __setChatTransportForTests. Production paths see _chatTransport === null.
   if (_chatTransport) {
-    let res: ChatResult | null = null;
-    let threw: unknown = null;
-    try {
-      res = await _chatTransport(opts);
-      return res;
-    } catch (err) {
-      threw = err;
-      throw err;
-    } finally {
-      if (tracker) {
-        try {
-          if (res) {
-            tracker.record({
-              modelId: res.model ?? modelStrEarly,
-              inputTokens: res.usage.input_tokens,
-              outputTokens: res.usage.output_tokens,
-              label: 'gateway.chat',
-            });
-          } else {
-            const usage = _extractUsageFromError(threw, {
-              inputTokens: estimatedInputTokens,
-              outputTokens: maxOutputTokens,
-            });
-            tracker.record({
-              modelId: modelStrEarly,
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-              label: 'gateway.chat',
-            });
-          }
-        } catch {
-          // record() can throw BudgetExhausted (TX1) — suppress here so the
-          // original error (if any) wins; the BudgetExhausted is surfaced
-          // on the NEXT call via reserve(). For test transport this branch
-          // is rare in practice.
+    const aggregateUsage: ChatResult['usage'] = {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_creation_tokens: 0,
+    };
+    const accumulateUsage = (usage: ChatResult['usage']): void => {
+      aggregateUsage.input_tokens += usage.input_tokens;
+      aggregateUsage.output_tokens += usage.output_tokens;
+      aggregateUsage.cache_read_tokens += usage.cache_read_tokens;
+      aggregateUsage.cache_creation_tokens += usage.cache_creation_tokens;
+    };
+    const recordTrackedAttempt = (
+      modelId: string,
+      usage: { inputTokens: number; outputTokens: number },
+    ): void => {
+      if (!tracker) return;
+      try {
+        tracker.record({
+          modelId,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          label: 'gateway.chat',
+        });
+      } catch {
+        // record() can throw BudgetExhausted (TX1) -- suppress here so the
+        // original error (if any) wins; the BudgetExhausted is surfaced
+        // on the NEXT call via reserve().
+      }
+    };
+
+    for (let i = 0; i < attemptModels.length; i++) {
+      const attemptModel = attemptModels[i]!;
+      try {
+        reserveChatAttemptBudget(attemptModel);
+        const res = await _chatTransport({ ...opts, model: attemptModel });
+        accumulateUsage(res.usage);
+        recordTrackedAttempt(res.model ?? attemptModel, {
+          inputTokens: res.usage.input_tokens,
+          outputTokens: res.usage.output_tokens,
+        });
+        if (i < attemptModels.length - 1 && shouldFallbackFromChatResult(res)) {
+          continue;
         }
+        return { ...res, usage: { ...aggregateUsage } };
+      } catch (err) {
+        const usage = _extractUsageFromError(err, {
+          inputTokens: estimatedInputTokens,
+          outputTokens: maxOutputTokens,
+        });
+        recordTrackedAttempt(attemptModel, usage);
+        if (i < attemptModels.length - 1 && shouldFallbackFromChatError(err)) {
+          continue;
+        }
+        throw err;
       }
     }
+    throw new AIConfigError('Chat fallback chain exhausted without a result.');
   }
 
   // Shadow comparison (local A/B harness — see ./shadow-compare.ts). Fire the
@@ -2886,144 +2915,182 @@ export async function chat(opts: ChatOpts): Promise<ChatResult> {
       .catch((err): ShadowOutcome => ({ model: sm, error: String(err) })),
   );
 
-  const modelStr = modelStrEarly;
-  const { model, recipe, modelId } = await resolveChatProvider(modelStr);
+  async function runSingleChatAttempt(modelStr: string): Promise<ChatResult> {
+    const { model, recipe, modelId } = await resolveChatProvider(modelStr);
 
-  const supportsCache = recipe.touchpoints.chat?.supports_prompt_cache === true;
-  const useCache = !!opts.cacheSystem && supportsCache;
+    const supportsCache = recipe.touchpoints.chat?.supports_prompt_cache === true;
+    const useCache = !!opts.cacheSystem && supportsCache;
 
-  // Build messages. Anthropic prompt-cache markers ride on system + last tool
-  // via providerOptions; the AI SDK accepts the system as a string for
-  // generateText, so cache markers go through providerOptions.anthropic.
-  const tools = (opts.tools ?? []).reduce((acc, t) => {
-    acc[t.name] = {
-      description: t.description,
-      // AI SDK v6 requires a Schema (carrying the schema symbol), not a plain
-      // `{jsonSchema}` object — the bare object makes asSchema() treat it as a
-      // thunk and call schema(), throwing "schema is not a function". Wrap the
-      // raw JSON Schema with the SDK's jsonSchema() helper so tool calls work
-      // through the real toolLoop (skillopt rollouts + subagent jobs).
-      inputSchema: jsonSchema(t.inputSchema as any),
-    };
-    return acc;
-  }, {} as Record<string, any>);
+    // Build messages. Anthropic prompt-cache markers ride on system + last tool
+    // via providerOptions; the AI SDK accepts the system as a string for
+    // generateText, so cache markers go through providerOptions.anthropic.
+    const tools = (opts.tools ?? []).reduce((acc, t) => {
+      acc[t.name] = {
+        description: t.description,
+        // AI SDK v6 requires a Schema (carrying the schema symbol), not a plain
+        // `{jsonSchema}` object — the bare object makes asSchema() treat it as a
+        // thunk and call schema(), throwing "schema is not a function". Wrap the
+        // raw JSON Schema with the SDK's jsonSchema() helper so tool calls work
+        // through the real toolLoop (skillopt rollouts + subagent jobs).
+        inputSchema: jsonSchema(t.inputSchema as any),
+      };
+      return acc;
+    }, {} as Record<string, any>);
 
-  const providerOptions: Record<string, any> = {};
-  if (useCache) {
-    providerOptions.anthropic = { cacheControl: { type: 'ephemeral' } };
-  }
-
-  let _budgetRecorded = false;
-  const _recordBudget = (modelLabel: string, inputTokens: number, outputTokens: number): void => {
-    if (!tracker || _budgetRecorded) return;
-    _budgetRecorded = true;
-    try {
-      tracker.record({
-        modelId: modelLabel,
-        inputTokens,
-        outputTokens,
-        label: 'gateway.chat',
-      });
-    } catch {
-      // BudgetExhausted (TX1) raised here; surface via next reserve()
+    const providerOptions: Record<string, any> = {};
+    if (useCache) {
+      providerOptions.anthropic = { cacheControl: { type: 'ephemeral' } };
     }
-  };
 
-  try {
-    const result = await generateText({
-      model,
-      system: opts.system,
-      messages: toModelMessages(opts.messages) as any,
-      tools: opts.tools && opts.tools.length > 0 ? tools : undefined,
-      maxOutputTokens: opts.maxTokens ?? 4096,
-      // v0.42.20.0 — default a chat timeout (composes with the caller's signal,
-      // shorter wins). Covers native-anthropic (the default provider + facts Haiku).
-      abortSignal: withDefaultTimeout(opts.abortSignal, AI_CHAT_TIMEOUT_MS),
-      providerOptions: Object.keys(providerOptions).length > 0 ? providerOptions : undefined,
-    });
+    let _budgetRecorded = false;
+    const _recordBudget = (modelLabel: string, inputTokens: number, outputTokens: number): void => {
+      if (!tracker || _budgetRecorded) return;
+      _budgetRecorded = true;
+      try {
+        tracker.record({
+          modelId: modelLabel,
+          inputTokens,
+          outputTokens,
+          label: 'gateway.chat',
+        });
+      } catch {
+        // BudgetExhausted (TX1) raised here; surface via next reserve()
+      }
+    };
 
-    // Normalize blocks. Vercel SDK gives us `result.content` (an array of typed
-    // parts) for v6+; fall back to text + toolCalls for older shapes.
-    const blocks: ChatBlock[] = [];
-    const rawContent: any[] = (result as any).content ?? [];
-    if (Array.isArray(rawContent) && rawContent.length > 0) {
-      for (const part of rawContent) {
-        if (part.type === 'text') blocks.push({ type: 'text', text: part.text });
-        else if (part.type === 'tool-call') {
+    try {
+      const result = await generateText({
+        model,
+        system: opts.system,
+        messages: toModelMessages(opts.messages) as any,
+        tools: opts.tools && opts.tools.length > 0 ? tools : undefined,
+        maxOutputTokens: opts.maxTokens ?? 4096,
+        // v0.42.20.0 — default a chat timeout (composes with the caller's signal,
+        // shorter wins). Covers native-anthropic (the default provider + facts Haiku).
+        abortSignal: withDefaultTimeout(opts.abortSignal, AI_CHAT_TIMEOUT_MS),
+        providerOptions: Object.keys(providerOptions).length > 0 ? providerOptions : undefined,
+      });
+
+      // Normalize blocks. Vercel SDK gives us `result.content` (an array of typed
+      // parts) for v6+; fall back to text + toolCalls for older shapes.
+      const blocks: ChatBlock[] = [];
+      const rawContent: any[] = (result as any).content ?? [];
+      if (Array.isArray(rawContent) && rawContent.length > 0) {
+        for (const part of rawContent) {
+          if (part.type === 'text') blocks.push({ type: 'text', text: part.text });
+          else if (part.type === 'tool-call') {
+            blocks.push({
+              type: 'tool-call',
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              input: part.input ?? part.args,
+            });
+          }
+        }
+      } else {
+        // Fallback shape for SDK versions exposing flat .text and .toolCalls.
+        if (typeof (result as any).text === 'string' && (result as any).text.length > 0) {
+          blocks.push({ type: 'text', text: (result as any).text });
+        }
+        for (const tc of (result as any).toolCalls ?? []) {
           blocks.push({
             type: 'tool-call',
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            input: part.input ?? part.args,
+            toolCallId: tc.toolCallId,
+            toolName: tc.toolName,
+            input: tc.input ?? tc.args,
           });
         }
       }
-    } else {
-      // Fallback shape for SDK versions exposing flat .text and .toolCalls.
-      if (typeof (result as any).text === 'string' && (result as any).text.length > 0) {
-        blocks.push({ type: 'text', text: (result as any).text });
+
+      const usage = (result as any).usage ?? {};
+      const providerMetadata = (result as any).providerMetadata as Record<string, any> | undefined;
+      const anthropicCache = providerMetadata?.anthropic ?? {};
+
+      const inTok = Number(usage.inputTokens ?? usage.promptTokens ?? 0);
+      const outTok = Number(usage.outputTokens ?? usage.completionTokens ?? 0);
+      _recordBudget(`${recipe.id}:${modelId}`, inTok, outTok);
+
+      const realResult: ChatResult = {
+        text: blocks.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join(''),
+        blocks,
+        stopReason: mapStopReason((result as any).finishReason, providerMetadata),
+        usage: {
+          input_tokens: inTok,
+          output_tokens: outTok,
+          cache_read_tokens: Number(anthropicCache.cacheReadInputTokens ?? anthropicCache.cache_read_input_tokens ?? 0),
+          cache_creation_tokens: Number(anthropicCache.cacheCreationInputTokens ?? anthropicCache.cache_creation_input_tokens ?? 0),
+        },
+        model: `${recipe.id}:${modelId}`,
+        providerId: recipe.id,
+        providerMetadata,
+      };
+
+      // Shadow comparison: once every shadow settles, append one JSON record.
+      // Detached from the runtime path — never awaited, never throws upward.
+      if (shadowPromises.length > 0 && shadowTier) {
+        void Promise.all(shadowPromises)
+          .then((shadows) =>
+            writeShadowComparison({
+              opts,
+              requestedModel: modelStrEarly,
+              tier: shadowTier,
+              real: realResult,
+              shadows,
+              now: new Date(),
+            }),
+          )
+          .catch(() => {});
       }
-      for (const tc of (result as any).toolCalls ?? []) {
-        blocks.push({
-          type: 'tool-call',
-          toolCallId: tc.toolCallId,
-          toolName: tc.toolName,
-          input: tc.input ?? tc.args,
-        });
-      }
+
+      return realResult;
+    } catch (err) {
+      // Pessimistic fallback (A3 amended): when err.usage isn't there, charge
+      // the worst-case ceiling — better to overcount on failure than under.
+      const fallback = _extractUsageFromError(err, {
+        inputTokens: estimatedInputTokens,
+        outputTokens: maxOutputTokens,
+      });
+      _recordBudget(`${recipe.id}:${modelId}`, fallback.inputTokens, fallback.outputTokens);
+      throw normalizeAIError(err, `chat(${recipe.id}:${modelId})`);
     }
-
-    const usage = (result as any).usage ?? {};
-    const providerMetadata = (result as any).providerMetadata as Record<string, any> | undefined;
-    const anthropicCache = providerMetadata?.anthropic ?? {};
-
-    const inTok = Number(usage.inputTokens ?? usage.promptTokens ?? 0);
-    const outTok = Number(usage.outputTokens ?? usage.completionTokens ?? 0);
-    _recordBudget(`${recipe.id}:${modelId}`, inTok, outTok);
-
-    const realResult: ChatResult = {
-      text: blocks.filter(b => b.type === 'text').map(b => (b as { type: 'text'; text: string }).text).join(''),
-      blocks,
-      stopReason: mapStopReason((result as any).finishReason, providerMetadata),
-      usage: {
-        input_tokens: inTok,
-        output_tokens: outTok,
-        cache_read_tokens: Number(anthropicCache.cacheReadInputTokens ?? anthropicCache.cache_read_input_tokens ?? 0),
-        cache_creation_tokens: Number(anthropicCache.cacheCreationInputTokens ?? anthropicCache.cache_creation_input_tokens ?? 0),
-      },
-      model: `${recipe.id}:${modelId}`,
-      providerId: recipe.id,
-      providerMetadata,
-    };
-
-    // Shadow comparison: once every shadow settles, append one JSON record.
-    // Detached from the runtime path — never awaited, never throws upward.
-    if (shadowPromises.length > 0 && shadowTier) {
-      void Promise.all(shadowPromises)
-        .then((shadows) =>
-          writeShadowComparison({
-            opts,
-            requestedModel: modelStrEarly,
-            tier: shadowTier,
-            real: realResult,
-            shadows,
-            now: new Date(),
-          }),
-        )
-        .catch(() => {});
-    }
-
-    return realResult;
-  } catch (err) {
-    // Pessimistic fallback (A3 amended): when err.usage isn't there, charge
-    // the worst-case ceiling — better to overcount on failure than under.
-    const fallback = _extractUsageFromError(err, {
-      inputTokens: estimatedInputTokens,
-      outputTokens: maxOutputTokens,
-    });
-    _recordBudget(`${recipe.id}:${modelId}`, fallback.inputTokens, fallback.outputTokens);
-    throw normalizeAIError(err, `chat(${recipe.id}:${modelId})`);
   }
+
+  let lastError: unknown = null;
+  let lastFallbackResult: ChatResult | null = null;
+  const aggregateUsage: ChatResult['usage'] = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_creation_tokens: 0,
+  };
+  const accumulateUsage = (usage: ChatResult['usage']): void => {
+    aggregateUsage.input_tokens += usage.input_tokens;
+    aggregateUsage.output_tokens += usage.output_tokens;
+    aggregateUsage.cache_read_tokens += usage.cache_read_tokens;
+    aggregateUsage.cache_creation_tokens += usage.cache_creation_tokens;
+  };
+  for (let i = 0; i < attemptModels.length; i++) {
+    const attemptModel = attemptModels[i]!;
+    try {
+      reserveChatAttemptBudget(attemptModel);
+      const result = await runSingleChatAttempt(attemptModel);
+      accumulateUsage(result.usage);
+      if (i < attemptModels.length - 1 && shouldFallbackFromChatResult(result)) {
+        lastFallbackResult = { ...result, usage: { ...aggregateUsage } };
+        continue;
+      }
+      return { ...result, usage: { ...aggregateUsage } };
+    } catch (err) {
+      lastError = err;
+      if (i < attemptModels.length - 1 && shouldFallbackFromChatError(err)) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (lastFallbackResult) return lastFallbackResult;
+  throw lastError ?? new AIConfigError('Chat fallback chain exhausted without a result.');
 }
 
 // ---- Tool loop (v0.38 — D11 + D6/D7 gateway-native subagent path) ----
