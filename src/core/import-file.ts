@@ -39,6 +39,7 @@ import { normalizeAliasList } from './search/alias-normalize.ts';
 import { isUndefinedTableError, warnOncePerProcess } from './utils.ts';
 import { computeCorpusGeneration } from './contextual-retrieval-service.ts';
 import { runGuardrails } from './guardrails.ts';
+import { extractReferenceCitationTimelineForPage } from './reference-citation-timeline.ts';
 
 /**
  * v0.20.0 Cathedral II Layer 8 D2 — markdown fence extraction helper.
@@ -879,6 +880,18 @@ export async function importFromContent(
       warnOncePerProcess(
         'setPageAliases:failed',
         `[import] page_aliases projection failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  if (opts.remote !== true && parsed.type === 'source') {
+    try {
+      const savedPage = await engine.getPage(slug, txOpts);
+      if (savedPage) await extractReferenceCitationTimelineForPage(engine, savedPage);
+    } catch (e) {
+      warnOncePerProcess(
+        'referenceCitationTimeline:failed',
+        `[import] reference citation timeline failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   }

@@ -88,6 +88,23 @@ describe('PGLiteEngine: Pages', () => {
     expect(matches.length).toBe(1);
   });
 
+  test('putPage creates one deterministic Created timeline event on first insert only', async () => {
+    await engine.putPage('test/created-once', {
+      ...testPage,
+      effective_date: new Date('2024-01-15T12:00:00Z'),
+    });
+    await engine.putPage('test/created-once', {
+      ...testPage,
+      title: 'Updated Once',
+      effective_date: new Date('2024-01-15T12:00:00Z'),
+    });
+
+    const entries = await engine.getTimeline('test/created-once');
+    const created = entries.filter((e) => e.source === 'system:page-created' && e.summary === 'Created');
+    expect(created).toHaveLength(1);
+    expect(created[0].date.toISOString().slice(0, 10)).toBe('2024-01-15');
+  });
+
   test('getPage returns null for missing slug', async () => {
     const result = await engine.getPage('nonexistent/slug');
     expect(result).toBeNull();
@@ -627,8 +644,9 @@ describe('PGLiteEngine: Timeline', () => {
       date: '2024-01-15', summary: 'Founded', detail: 'Company founded',
     });
     const entries = await engine.getTimeline('test/timeline');
-    expect(entries.length).toBe(1);
-    expect(entries[0].summary).toBe('Founded');
+    const founded = entries.filter((e) => e.summary === 'Founded');
+    expect(founded).toHaveLength(1);
+    expect(founded[0].detail).toBe('Company founded');
   });
 
   test('getTimeline with date range', async () => {
@@ -723,9 +741,10 @@ describe('PGLiteEngine: addTimelineEntriesBatch', () => {
     ]);
     expect(inserted).toBe(1);
     const entries = await engine.getTimeline('p1');
-    expect(entries.length).toBe(1);
-    expect(entries[0].source).toBe('');
-    expect(entries[0].detail).toBe('');
+    const founded = entries.find((e) => e.summary === 'Founded');
+    expect(founded).toBeTruthy();
+    expect(founded!.source).toBe('');
+    expect(founded!.detail).toBe('');
   });
 
   test('within-batch duplicates are deduped via ON CONFLICT', async () => {
@@ -848,7 +867,8 @@ describe('PGLiteEngine: batch ops source-awareness (v0.18.0)', () => {
     const db = (engine as any).db;
     const { rows } = await db.query(
       `SELECT p.source_id FROM timeline_entries te
-       JOIN pages p ON p.id = te.page_id`
+       JOIN pages p ON p.id = te.page_id
+       WHERE te.summary = 'Founded'`
     );
     expect(rows.length).toBe(1);
     expect(rows[0].source_id).toBe('default');
@@ -862,7 +882,8 @@ describe('PGLiteEngine: batch ops source-awareness (v0.18.0)', () => {
     const db = (engine as any).db;
     const { rows } = await db.query(
       `SELECT p.source_id FROM timeline_entries te
-       JOIN pages p ON p.id = te.page_id`
+       JOIN pages p ON p.id = te.page_id
+       WHERE te.summary = 'Founded'`
     );
     expect(rows.length).toBe(1);
     expect(rows[0].source_id).toBe('alt');
@@ -1119,14 +1140,16 @@ describe('PGLiteEngine: Timeline dedup constraint (v6 migration)', () => {
     await engine.addTimelineEntry('test/timeline-dedup', { date: '2026-01-15', summary: 'Event A' });
     await engine.addTimelineEntry('test/timeline-dedup', { date: '2026-01-15', summary: 'Event A' });
     const entries = await engine.getTimeline('test/timeline-dedup');
-    expect(entries.length).toBe(1);
+    const eventA = entries.filter((e) => e.summary === 'Event A');
+    expect(eventA).toHaveLength(1);
   });
 
   test('different summary on same date: both inserted', async () => {
     await engine.addTimelineEntry('test/timeline-dedup', { date: '2026-01-15', summary: 'Morning' });
     await engine.addTimelineEntry('test/timeline-dedup', { date: '2026-01-15', summary: 'Evening' });
     const entries = await engine.getTimeline('test/timeline-dedup');
-    expect(entries.length).toBe(2);
+    expect(entries.filter((e) => e.summary === 'Morning')).toHaveLength(1);
+    expect(entries.filter((e) => e.summary === 'Evening')).toHaveLength(1);
   });
 
   test('throws on missing page (default behavior preserved)', async () => {
@@ -1275,7 +1298,7 @@ describe('PGLiteEngine: getHealth graph metrics', () => {
   test('timeline_coverage = % with >= 1 timeline entry', async () => {
     await engine.addTimelineEntry('people/alice', { date: '2026-01-15', summary: 'Joined' });
     const h = await engine.getHealth();
-    expect(h.timeline_coverage).toBeCloseTo(1 / 3, 2);
+    expect(h.timeline_coverage).toBeCloseTo(1, 2);
   });
 
   test('most_connected lists top entities by link count', async () => {

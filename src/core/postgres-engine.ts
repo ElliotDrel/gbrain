@@ -982,30 +982,51 @@ export class PostgresEngine implements BrainEngine {
     const sourceUri = page.source_uri ?? null;
     const ingestedVia = page.ingested_via ?? null;
     const ingestedAt = (sourceKind || sourceUri || ingestedVia) ? new Date() : null;
-    const rows = await sql`
+    const inserted = await sql`
       INSERT INTO pages (source_id, slug, type, page_kind, title, compiled_truth, timeline, frontmatter, content_hash, updated_at, effective_date, effective_date_source, import_filename, chunker_version, source_path, source_kind, source_uri, ingested_via, ingested_at)
       VALUES (${sourceId}, ${slug}, ${page.type}, ${pageKind}, ${page.title}, ${page.compiled_truth}, ${page.timeline || ''}, ${sql.json(frontmatter as Parameters<typeof sql.json>[0])}, ${hash}, now(), ${effectiveDate}, ${effectiveDateSource}, ${importFilename}, COALESCE(${chunkerVersion}::smallint, 1), ${sourcePath}, ${sourceKind}, ${sourceUri}, ${ingestedVia}, ${ingestedAt})
-      ON CONFLICT (source_id, slug) DO UPDATE SET
-        type = EXCLUDED.type,
-        page_kind = EXCLUDED.page_kind,
-        title = EXCLUDED.title,
-        compiled_truth = EXCLUDED.compiled_truth,
-        timeline = EXCLUDED.timeline,
-        frontmatter = EXCLUDED.frontmatter,
-        content_hash = EXCLUDED.content_hash,
-        updated_at = now(),
-        effective_date        = COALESCE(EXCLUDED.effective_date,        pages.effective_date),
-        effective_date_source = COALESCE(EXCLUDED.effective_date_source, pages.effective_date_source),
-        import_filename       = COALESCE(EXCLUDED.import_filename,       pages.import_filename),
-        chunker_version       = COALESCE(EXCLUDED.chunker_version,       pages.chunker_version),
-        source_path           = COALESCE(EXCLUDED.source_path,           pages.source_path),
-        source_kind           = COALESCE(EXCLUDED.source_kind,           pages.source_kind),
-        source_uri            = COALESCE(EXCLUDED.source_uri,            pages.source_uri),
-        ingested_via          = COALESCE(EXCLUDED.ingested_via,          pages.ingested_via),
-        ingested_at           = COALESCE(EXCLUDED.ingested_at,           pages.ingested_at)
+      ON CONFLICT (source_id, slug) DO NOTHING
       RETURNING id, source_id, slug, type, title, compiled_truth, timeline, frontmatter, content_hash, created_at, updated_at, effective_date, effective_date_source, import_filename, source_kind, source_uri, ingested_via, ingested_at
     `;
-    return rowToPage(rows[0]);
+    let saved;
+    let wasCreated = false;
+    if (inserted.length > 0) {
+      saved = rowToPage(inserted[0]);
+      wasCreated = true;
+    } else {
+      const updated = await sql`
+        UPDATE pages
+           SET type = ${page.type},
+               page_kind = ${pageKind},
+               title = ${page.title},
+               compiled_truth = ${page.compiled_truth},
+               timeline = ${page.timeline || ''},
+               frontmatter = ${sql.json(frontmatter as Parameters<typeof sql.json>[0])},
+               content_hash = ${hash},
+               updated_at = now(),
+               effective_date        = COALESCE(${effectiveDate}, pages.effective_date),
+               effective_date_source = COALESCE(${effectiveDateSource}, pages.effective_date_source),
+               import_filename       = COALESCE(${importFilename}, pages.import_filename),
+               chunker_version       = COALESCE(${chunkerVersion}::smallint, pages.chunker_version),
+               source_path           = COALESCE(${sourcePath}, pages.source_path),
+               source_kind           = COALESCE(${sourceKind}, pages.source_kind),
+               source_uri            = COALESCE(${sourceUri}, pages.source_uri),
+               ingested_via          = COALESCE(${ingestedVia}, pages.ingested_via),
+               ingested_at           = COALESCE(${ingestedAt}, pages.ingested_at)
+         WHERE source_id = ${sourceId} AND slug = ${slug}
+      RETURNING id, source_id, slug, type, title, compiled_truth, timeline, frontmatter, content_hash, created_at, updated_at, effective_date, effective_date_source, import_filename, source_kind, source_uri, ingested_via, ingested_at
+      `;
+      saved = rowToPage(updated[0]);
+    }
+    if (wasCreated) {
+      const createdDate = (saved.effective_date ?? saved.created_at).toISOString().slice(0, 10);
+      await sql`
+        INSERT INTO timeline_entries (page_id, date, source, summary, detail)
+        VALUES (${saved.id}, ${createdDate}::date, 'system:page-created', 'Created', '')
+        ON CONFLICT (page_id, date, summary, source) DO NOTHING
+      `;
+    }
+    return saved;
   }
 
   async deletePage(slug: string, opts?: { sourceId?: string }): Promise<void> {

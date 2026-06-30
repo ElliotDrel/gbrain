@@ -5801,6 +5801,38 @@ export async function buildChecks(
       });
     }
 
+    const allPageStats = (await engine.executeRaw<{ pages: number; timeline: number }>(
+      `SELECT
+        (SELECT count(*)::int FROM pages WHERE deleted_at IS NULL) AS pages,
+        (SELECT count(DISTINCT te.page_id)::int
+           FROM timeline_entries te
+           JOIN pages p ON p.id = te.page_id
+          WHERE p.deleted_at IS NULL) AS timeline`,
+    ))[0] ?? { pages: 0, timeline: 0 };
+    const allPageCount = Number(allPageStats.pages ?? 0);
+    const allPageTimeline = Number(allPageStats.timeline ?? 0);
+    const allPageCoverage = allPageCount > 0 ? allPageTimeline / allPageCount : 1;
+    const allPagePct = (allPageCoverage * 100).toFixed(0);
+    if (allPageCount === 0) {
+      checks.push({
+        name: 'timeline_presence_coverage',
+        status: 'ok',
+        message: 'No pages — timeline presence check vacuous',
+      });
+    } else if (allPageCoverage >= 0.95) {
+      checks.push({
+        name: 'timeline_presence_coverage',
+        status: 'ok',
+        message: `All-page timeline presence ${allPagePct}% (${allPageTimeline}/${allPageCount})`,
+      });
+    } else {
+      checks.push({
+        name: 'timeline_presence_coverage',
+        status: 'warn',
+        message: `All-page timeline presence ${allPagePct}% (${allPageTimeline}/${allPageCount}). Backfill Created events + reference citations.`,
+      });
+    }
+
     // Bug 11 — brain_score breakdown. When the total is < 100, show which
     // components contributed the deficit so users know what to fix.
     // Uses distinct *_score field names (not overloading link_coverage /

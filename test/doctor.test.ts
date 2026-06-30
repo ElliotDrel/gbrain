@@ -220,6 +220,13 @@ describe('doctor command', () => {
     expect(src).not.toContain('gbrain timeline-extract');
   });
 
+  test('doctor source contains the all-pages timeline presence check', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync('src/commands/doctor.ts', 'utf8');
+    expect(src).toContain("name: 'timeline_presence_coverage'");
+    expect(src).toContain('Backfill Created events + reference citations.');
+  });
+
   // v0.32 — takes_weight_grid pure-helper export.
   // Codex review #7 demanded the check be extracted as a pure function so
   // tests target it directly with stubbed engines instead of running the

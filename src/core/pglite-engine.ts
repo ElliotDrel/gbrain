@@ -977,31 +977,59 @@ export class PGLiteEngine implements BrainEngine {
     const sourceUri = page.source_uri ?? null;
     const ingestedVia = page.ingested_via ?? null;
     const ingestedAt = (sourceKind || sourceUri || ingestedVia) ? new Date().toISOString() : null;
-    const { rows } = await this.db.query(
+    const params = [
+      sourceId, slug, page.type, pageKind, page.title, page.compiled_truth, page.timeline || '',
+      JSON.stringify(frontmatter), hash, effectiveDate, effectiveDateSource, importFilename,
+      chunkerVersion, sourcePath, sourceKind, sourceUri, ingestedVia, ingestedAt,
+    ];
+    const insertSql =
       `INSERT INTO pages (source_id, slug, type, page_kind, title, compiled_truth, timeline, frontmatter, content_hash, updated_at, effective_date, effective_date_source, import_filename, chunker_version, source_path, source_kind, source_uri, ingested_via, ingested_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, now(), $10::timestamptz, $11, $12, COALESCE($13, 1), $14, $15, $16, $17, $18::timestamptz)
-       ON CONFLICT (source_id, slug) DO UPDATE SET
-         type = EXCLUDED.type,
-         page_kind = EXCLUDED.page_kind,
-         title = EXCLUDED.title,
-         compiled_truth = EXCLUDED.compiled_truth,
-         timeline = EXCLUDED.timeline,
-         frontmatter = EXCLUDED.frontmatter,
-         content_hash = EXCLUDED.content_hash,
-         updated_at = now(),
-         effective_date        = COALESCE(EXCLUDED.effective_date,        pages.effective_date),
-         effective_date_source = COALESCE(EXCLUDED.effective_date_source, pages.effective_date_source),
-         import_filename       = COALESCE(EXCLUDED.import_filename,       pages.import_filename),
-         chunker_version       = COALESCE(EXCLUDED.chunker_version,       pages.chunker_version),
-         source_path           = COALESCE(EXCLUDED.source_path,           pages.source_path),
-         source_kind           = COALESCE(EXCLUDED.source_kind,           pages.source_kind),
-         source_uri            = COALESCE(EXCLUDED.source_uri,            pages.source_uri),
-         ingested_via          = COALESCE(EXCLUDED.ingested_via,          pages.ingested_via),
-         ingested_at           = COALESCE(EXCLUDED.ingested_at,           pages.ingested_at)
-       RETURNING id, source_id, slug, type, title, compiled_truth, timeline, frontmatter, content_hash, created_at, updated_at, effective_date, effective_date_source, import_filename, source_kind, source_uri, ingested_via, ingested_at`,
-      [sourceId, slug, page.type, pageKind, page.title, page.compiled_truth, page.timeline || '', JSON.stringify(frontmatter), hash, effectiveDate, effectiveDateSource, importFilename, chunkerVersion, sourcePath, sourceKind, sourceUri, ingestedVia, ingestedAt]
-    );
-    return rowToPage(rows[0] as Record<string, unknown>);
+       ON CONFLICT (source_id, slug) DO NOTHING
+       RETURNING id, source_id, slug, type, title, compiled_truth, timeline, frontmatter, content_hash, created_at, updated_at, effective_date, effective_date_source, import_filename, source_kind, source_uri, ingested_via, ingested_at`;
+    const inserted = await this.db.query(insertSql, params);
+    let row: Record<string, unknown>;
+    let wasCreated = false;
+    if (inserted.rows.length > 0) {
+      row = inserted.rows[0] as Record<string, unknown>;
+      wasCreated = true;
+    } else {
+      const updated = await this.db.query(
+        `UPDATE pages
+            SET type = $3,
+                page_kind = $4,
+                title = $5,
+                compiled_truth = $6,
+                timeline = $7,
+                frontmatter = $8::jsonb,
+                content_hash = $9,
+                updated_at = now(),
+                effective_date        = COALESCE($10::timestamptz, pages.effective_date),
+                effective_date_source = COALESCE($11, pages.effective_date_source),
+                import_filename       = COALESCE($12, pages.import_filename),
+                chunker_version       = COALESCE($13, pages.chunker_version),
+                source_path           = COALESCE($14, pages.source_path),
+                source_kind           = COALESCE($15, pages.source_kind),
+                source_uri            = COALESCE($16, pages.source_uri),
+                ingested_via          = COALESCE($17, pages.ingested_via),
+                ingested_at           = COALESCE($18::timestamptz, pages.ingested_at)
+          WHERE source_id = $1 AND slug = $2
+        RETURNING id, source_id, slug, type, title, compiled_truth, timeline, frontmatter, content_hash, created_at, updated_at, effective_date, effective_date_source, import_filename, source_kind, source_uri, ingested_via, ingested_at`,
+        params,
+      );
+      row = updated.rows[0] as Record<string, unknown>;
+    }
+    const saved = rowToPage(row);
+    if (wasCreated) {
+      const createdDate = (saved.effective_date ?? saved.created_at).toISOString().slice(0, 10);
+      await this.db.query(
+        `INSERT INTO timeline_entries (page_id, date, source, summary, detail)
+         VALUES ($1, $2::date, 'system:page-created', 'Created', '')
+         ON CONFLICT (page_id, date, summary, source) DO NOTHING`,
+        [saved.id, createdDate],
+      );
+    }
+    return saved;
   }
 
   async deletePage(slug: string, opts?: { sourceId?: string }): Promise<void> {
