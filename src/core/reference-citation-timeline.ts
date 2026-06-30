@@ -16,6 +16,13 @@ export interface ReferenceCitationOpts {
   dryRun?: boolean;
   gazetteer?: Gazetteer;
   sourceKeyPrefix?: string;
+  /**
+   * Pre-built set of `${source_id}::${slug}` keys for pages with
+   * frontmatter.reference === true. Injectable so a batch caller (the
+   * timeline-backfill loop) builds it once instead of re-querying the full
+   * reference-target set per source page. Mirrors the `gazetteer` injection.
+   */
+  referenceTargets?: Set<string>;
 }
 
 export interface ReferenceCitationResult {
@@ -32,7 +39,7 @@ function isoDate(value: Date | string | null | undefined): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-async function loadReferenceTargetSet(engine: BrainEngine): Promise<Set<string>> {
+export async function loadReferenceTargetSet(engine: BrainEngine): Promise<Set<string>> {
   const rows = await engine.executeRaw<{ slug: string; source_id: string | null }>(
     `SELECT slug, source_id
        FROM pages
@@ -58,7 +65,7 @@ export async function extractReferenceCitationTimelineForPage(
   }
 
   const gazetteer = opts.gazetteer ?? await buildGazetteer(engine);
-  const referenceTargets = await loadReferenceTargetSet(engine);
+  const referenceTargets = opts.referenceTargets ?? await loadReferenceTargetSet(engine);
   const mentions = findMentionedEntities(
     `${page.compiled_truth}\n${page.timeline}`.trim(),
     gazetteer,
