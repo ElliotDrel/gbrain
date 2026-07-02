@@ -356,13 +356,9 @@ later → add a `followups/<name>.md` + a row here.
 ### Phase 9: Execution split (only if the meeting has action items)
 
 If the meeting produced **Action Items**, read and follow `execution-split.md`: split
-each into **Do now** (do it immediately) vs **Track** (candidate task-manager items),
-execute the do-now items, and then handle the user's own Track items like this:
-- if the meeting's brain already has `ops/tasks.md`, or the user explicitly asked for
-  task-manager writes, add them automatically there
-- otherwise, **do not create `ops/tasks.md`**; surface the Track items in the Phase 10
-  delivery only
-Only the user's own items ever go on their list (other people's stay in the
+each into **Do now** (do it immediately) vs **Track** (things to carry forward),
+execute the do-now items, and surface the user's own Track items in the Phase 10
+delivery. Only the user's own items are surfaced (other people's stay in the
 follow-up/recap). Skip this phase entirely if there are no action items. This runs
 independently of the follow-up.
 
@@ -454,7 +450,5 @@ steer back to the phase that prevents them:
 - Not merging timelines across all mentioned entities
 - Creating attendee stubs without meaningful content
 - Filing meeting pages without cross-linking to all participants
-- Adding *other people's* action items to the user's task manager (only the user's
-  own items go on their list; other people's stay in the follow-up/recap)
-- Creating `ops/tasks.md` from scratch as a side effect of meeting ingestion instead
-  of only writing to an existing tracker or a tracker the user explicitly asked for
+- Surfacing *other people's* action items as the user's own (only the user's own items
+  are surfaced to them; other people's stay in the follow-up/recap)

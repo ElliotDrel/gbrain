@@ -95,16 +95,6 @@
       "description": "Create new skills following the conformance standard with MECE validation."
     },
     {
-      "name": "daily-task-manager",
-      "path": "daily-task-manager/SKILL.md",
-      "description": "Task lifecycle: add, complete, defer, remove, review with priority levels."
-    },
-    {
-      "name": "daily-task-prep",
-      "path": "daily-task-prep/SKILL.md",
-      "description": "Morning preparation with calendar context, open threads, and task review."
-    },
-    {
       "name": "cross-modal-review",
       "path": "cross-modal-review/SKILL.md",
       "description": "Quality gate via second model with refusal routing chain."

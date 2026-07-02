@@ -339,6 +339,33 @@ in the entry default export set `id: 'gbrain'` + `kind: 'context-engine'`; set t
 > files** that replay cleanly on rebase and don't need intent-recreation. Listed
 > for awareness only; if their thin wiring ever conflicts, treat as Section A.
 
+## A9. REMOVED task subsystem — 2 stock skills + their references
+**Files:** DELETE `skills/daily-task-manager/` and `skills/daily-task-prep/` (whole
+dirs). Scrub every reference to them / to `ops/tasks.md` from the loaded surfaces:
+`skills/manifest.json` (drop both entries), `openclaw.plugin.json` (drop both
+`skills/...` lines), `skills/RESOLVER.md` (drop the two trigger rows),
+`llms-full.txt` (drop both skill-list mentions + the two RESOLVER rows),
+`CLAUDE.md` (drop both skill-list mentions), `templates/HEARTBEAT.md.template`
+(drop the "Daily task prep" bullet), `skills/functional-area-resolver/SKILL.md`
+(drop the "Tasks & Logistics -> daily-task-manager" dispatcher line),
+`skills/meeting-ingestion/SKILL.md` (Phase 9 + anti-patterns: no task-manager /
+`ops/tasks.md` writes; Track items surface in delivery only),
+`skills/meeting-ingestion/execution-split.md` (rewrite: Track = carry-forward in
+final delivery, no tracker, no `ops/tasks.md`).
+**Why:** Elliot does not use the task subsystem and does not want the AI aware of
+it. The two skills were the live surface (eligible-skills list every session).
+**Deliberately NOT touched (scope choice, 2026-07-02):** the dormant
+`resolveTodayTasks`/`ops/tasks.md` reader in `src/core/context-engine.ts` (+ its
+tests) is LEFT AS-IS — it reads a file that never exists, injects nothing, and is
+invisible to the AI; not worth carrying as a fork-source patch. Historical-only
+mentions in `CHANGELOG.md`, `evals/`, and `docs/` are also left alone (never
+loaded into AI context; editing them = permanent rebase conflicts for zero gain).
+**How to recreate:** re-delete the two skill dirs after any upgrade that restores
+them, then re-scrub the reference list above. Fast check:
+`grep -rniI "daily-task\|ops/tasks" skills/ openclaw.plugin.json templates/ CLAUDE.md llms-full.txt`
+must return empty.
+Added 2026-07-02.
+
 ═══════════════════════════════════════════════════════════════════════
 # Section B — Ephemeral Bug Fixes (carry ONLY until upstream fixes; then DROP)
 ═══════════════════════════════════════════════════════════════════════

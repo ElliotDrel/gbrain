@@ -214,7 +214,6 @@ Group skills by domain. Typical areas (adjust per deployment):
 - **Places & Travel** — checkin as dispatcher
 - **Product & Building** — acp-coding as dispatcher
 - **Infrastructure** — healthcheck as dispatcher
-- **Tasks & Logistics** — daily-task-manager as dispatcher
 - **People & Contacts** — google-contacts as dispatcher
 
 ### Step 4: Build the area entry format

@@ -410,9 +410,9 @@ organized by `skills/RESOLVER.md` (`AGENTS.md` is also accepted as of v0.19):
 briefing, migrate, setup, publish.
 
 **Brain skills (ported from an upstream agent fork):** signal-detector, brain-ops, idea-ingest, media-ingest,
-meeting-ingestion, citation-fixer, repo-architecture, skill-creator, daily-task-manager.
+meeting-ingestion, citation-fixer, repo-architecture, skill-creator.
 
-**Operational + identity:** daily-task-prep, cross-modal-review, cron-scheduler, reports,
+**Operational + identity:** cross-modal-review, cron-scheduler, reports,
 testing, soul-audit, webhook-transforms, data-research, minion-orchestrator. As of
 v0.20.4, `minion-orchestrator` is the single unified skill for both lanes of background
 work (shell jobs via `gbrain jobs submit shell`, LLM subagents via `gbrain agent run`) ...
@@ -1398,8 +1398,6 @@ This is the dispatcher. Skills are the implementation. **Read the skill file bef
 
 | Trigger | Skill |
 |---------|-------|
-| Task add/remove/complete/defer/review | `skills/daily-task-manager/SKILL.md` |
-| Morning prep, meeting context, day planning | `skills/daily-task-prep/SKILL.md` |
 | Daily briefing, "what's happening today" | `skills/briefing/SKILL.md` |
 | Cron scheduling, quiet hours, job staggering | `skills/cron-scheduler/SKILL.md` |
 | "get more out of gbrain", "is my brain set up right", "weekly brain checkup", "advise me on my brain", "gbrain advisor" | `skills/gbrain-advisor/SKILL.md` |

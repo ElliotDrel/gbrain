@@ -11,7 +11,6 @@ What the agent checks and when. Each job reads the relevant skill file and runs 
 - Brain-first lookup: `skills/conventions/brain-first.md`
 
 ### Morning (daily)
-- Daily task prep: `skills/daily-task-prep/SKILL.md`
 - Calendar lookahead
 - Open threads from yesterday
 
