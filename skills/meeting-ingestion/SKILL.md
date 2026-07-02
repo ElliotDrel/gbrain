@@ -161,7 +161,7 @@ This skill guarantees:
   notes built and ingested, attendees enriched, entities propagated, timelines
   merged, the work committed and pushed, the follow-up/recap drafted, and the
   execution split run (do-now items executed, and the user's own Track items
-  either added to an existing tracker or surfaced unwritten in the final delivery).
+  carried forward in the final delivery).
 - There is **exactly one human-in-the-loop checkpoint, and it is the final delivery
   message** — it carries the canonical brain file path, the clickable GitHub commit
   link for the pushed work, the ready-to-send follow-up/recap, and the
@@ -368,9 +368,8 @@ Everything above ran without the user. Now commit and push all the brain changes
 ingest produced, then present a single delivery message and invite corrections.
 
 1. **Commit & push.** Stage every file this ingest touched — the meeting page, any
-   git-tracked raw sidecar, the people/entity pages created or updated, and the task
-   page if Phase 9 updated an existing tracker. Resolve the repository's push remote,
-   commit, and push.
+   git-tracked raw sidecar, and the people/entity pages created or updated. Resolve the
+   repository's push remote, commit, and push.
 2. **Deliver — one message** carrying:
    - the ingest report: `Meeting ingested: {N} attendees enriched, {N} entities updated, {N} action items captured.`
    - the canonical brain file path (`$BRAIN_DIR/meetings/<slug>.md`) and the clickable
@@ -379,9 +378,8 @@ ingest produced, then present a single delivery message and invite corrections.
      inbound-media path; if the surface can't attach, quote the relevant sections and
      give that path.
    - the **ready-to-send** follow-up message or team recap (Phase 8) — drafted, not sent
-   - the execution-split summary (Phase 9): what was done now, and either the tasks
-     added (owner, priority, due date) or the Track items intentionally left unwritten
-     because no tracker exists
+   - the execution-split summary (Phase 9): what was done now, and the user's own Track
+     items carried forward for review
    - any uncertain attributions to confirm, and an explicit invitation to flag anything to fix
 3. **Iterate on request.** If the user flags an issue, fix it — update the canonical
    file and re-ingest, correct attributions/links/people/companies, re-bucket or edit
