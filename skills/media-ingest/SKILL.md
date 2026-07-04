@@ -1,6 +1,6 @@
 ---
 name: media-ingest
-version: 2.2.0
+version: 2.2.1
 description: |
   Ingest social/video, audio, PDF, book, screenshot, GitHub-repo, and
   file-source content into the brain as analyzed pages (not transcript dumps),
@@ -100,7 +100,7 @@ Every ingest produces:
   and the page is complete without it (see the hard guardrails).
 
 <hard_guardrails>
-These five are load-bearing. The rest of this skill is normal directive guidance; these are not.
+These eight are load-bearing. The rest of this skill is normal directive guidance; these are not.
 
 1. **Never invent `## Why I Saved This`.** It is Elliot's signal and only he can give it. If
    he gave a reason when he sent the item, write a faithful version of that reason. You may
@@ -110,7 +110,11 @@ These five are load-bearing. The rest of this skill is normal directive guidance
    cross-link it there. Otherwise ingest the whole item without the section and ask for it once,
    in the final summary ("Why did you send me this?"). If he answers, add the section in that
    lightly normalized form and re-ingest; if he doesn't, leave it out -- the page is complete
-   either way. No placeholder, no `_Pending_`, no invented motive, ever.
+   either way. No placeholder, no `_Pending_`, no invented motive, ever. Do not evade this rule
+   with an alias heading such as `## Why It Matters to Elliot`, `## Why This Matters for Elliot`,
+   `## Why He Matters to Elliot`, or any other section that claims Elliot's personal relevance,
+   goals, projects, intent, or motive. `## Why I Saved This` is the only personal-motive section,
+   and it exists only when Elliot explicitly gave the reason.
 2. **Never hand-write a social/video raw file**, and never re-run the fetch script to paper
    over a failure. ScrapeCreators bills per request and the script already retried internally.
    On failure, surface the script's exact error to Elliot and stop.
@@ -136,6 +140,14 @@ These five are load-bearing. The rest of this skill is normal directive guidance
    `skills/conventions/reference-entities.md`. If it is someone he actually
    knows or deals with, keep it real. If unsure, STOP and check the convention
    before writing. Companies are never reference.
+7. **Keep entity pages neutral.** `people/...` and `companies/...` pages are factual records
+   about the entity. Do not add personal-relevance sections there, even for reference people.
+   If Elliot explicitly gave a reason, it belongs only on the source/concept page as
+   `## Why I Saved This` with the source of Elliot's statement.
+8. **One social/video item produces one analyzed page.** The raw `.txt` is provenance; the
+   analyzed page is filed by subject (`concepts/...` or `sources/...`). Do not also create a
+   metadata-only `sources/*-clip.md` holder for the same URL. If the item is only metadata and
+   cannot support analysis, make the single analyzed page say that plainly or leave only the raw.
 </hard_guardrails>
 
 ## Phase 1 -- Identify format and fetch
@@ -170,7 +182,7 @@ exit code and the stderr message:
 |---|---|
 | Exit `0`, transcript present | Proceed to Phase 2. |
 | Exit `0`, `ALREADY INGESTED` | Do **not** re-file. This is the (immediate) final message: tell Elliot it's already ingested, cite the printed path / its concept page, and ask what he'd like changed. |
-| Exit `0`, transcript `empty` (no captions/audio) | Build a transcript-less page autonomously from the description + metadata. Don't stop to confirm -- note in the final summary that there was no transcript. |
+| Exit `0`, transcript `empty-no-speech` / clean empty transcript (no captions/audio detected) | Build a transcript-less page autonomously from the description + metadata. Don't stop to confirm -- note in the final summary that there was no transcript and whether on-screen text was recovered. |
 | `⚠ POSSIBLE DUPLICATE CONTENT` (same clip cross-posted / a trimmed cut) | Make the call yourself: **default to adding this URL as an extra source on the existing concept page** ("Also posted on..."); file a separate page only when the content is clearly distinct. Note the decision (and the script's comparison) in the final summary so Elliot can re-file if he disagrees. |
 | Exit `5`, `X LONG-FORM ARTICLE DETECTED` | **Stop and ask Elliot to paste or send the full article text.** X *Articles* (the titled editorial essays) are only a teaser card on the tweet endpoint -- the body is a separate, gated object no provider route exposes, and the direct article URL is 402/gated. Do **not** build a page from the teaser. When Elliot supplies the text: if he **sends it as a file** (attachment / export), do **not** retype it -- **move that exact file** into the raw home (e.g. `sources/social/<platform>-<id>.txt`) and transform it in place per hard guardrail 5; if he pastes it inline with no file artifact, treat his paste as the transcript. Either way, persist via the normal Phase 2-5 flow. NOTE: ordinary long *Note Tweets* (>280 chars) are **not** affected -- their full body is recovered automatically, so they ingest normally. |
 | Any non-zero exit, or a `>>> SURFACE THIS TO THE USER` line | **Stop.** Relay the exact HTTP status + body the script printed. Do not re-run, do not hand-write the raw. (A failed fetch can't be ingested -- this is the one place you stop early.) |
@@ -208,9 +220,10 @@ This guarantees you only ever touch metadata, and the content can't silently cha
 
 For social/video, the script already wrote the provenance artifact at
 `sources/social/<platform>-<id>.txt`. **Read it -- do not re-fetch.** Its frontmatter holds the
-full metadata object (author, stats, duration, `createdAt`, `_transcript_state`); its body holds
-the description and plain-text transcript. That is your source material. (Keep it as-is per
-hard guardrail 3.)
+full metadata object (author, stats, duration, `createdAt`, `_transcript_state`, and -- when the
+provider returned an untimed transcript -- `_transcript_timestamps_unavailable` plus
+`_transcript_timestamps_unavailable_reason`); its body holds the description and plain-text
+transcript. That is your source material. (Keep it as-is per hard guardrail 3.)
 
 **On-screen-text case:** if it is a short video (`duration` <= ~90s) whose transcript is empty
 or trivial (e.g. `Let's rock`), the real content is burned-in on-screen text. Recover it before
@@ -254,6 +267,11 @@ omit the section and build the rest of the page in full -- the single question (
 send me this?") is asked once at the final summary (Output), and if he answers you add the
 section in that lightly normalized form and re-ingest (hard guardrail 1). Never infer a new
 motivation he did not give.
+
+An idea-level `## Why It Matters` section is allowed only when it describes why the idea matters
+in general. It must not name Elliot, Keel, buildpurdue, EMS, Finance Club, his goals, his
+identity, or what he "wants" unless that exact personal reason came from Elliot and is instead
+filed as `## Why I Saved This`.
 
 File by primary subject:
 - reusable mental model / framework / technique -> `concepts/<slug>.md`
@@ -394,6 +412,14 @@ Each is paired with what to do instead.
   one, but lightly normalize it into clean prose instead of copying typos verbatim; otherwise
   omit it and ask once at the final summary, adding it and re-ingesting only if he answers
   (hard guardrail 1).
+- **Inventing personal relevance under a different heading** (`Why It Matters to Elliot`,
+  `Why He Matters to Elliot`, `Why This Matters for Elliot`, project-specific motive claims,
+  or "Elliot wants..." sentences) -> remove it unless Elliot explicitly said it; if he did, use
+  `## Why I Saved This` on the concept/source page with the statement source.
+- **Putting Elliot's motive on an entity page** -> entity pages stay neutral. Link to the
+  concept/source page instead.
+- **Creating a metadata-only clip page plus a concept page for the same social URL** -> choose
+  one analyzed page and keep the `.txt` raw as provenance.
 - **Gating the work mid-flow** -- confirming before building a transcript-less page, or stopping
   on a duplicate / merge-vs-new judgment call -> make the call, ingest, and surface it in the
   final summary for Elliot to re-file. The only early stop is a failed fetch.

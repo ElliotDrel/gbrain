@@ -21,7 +21,8 @@
 // post we already have a COMPLETE transcript for — two gates:
 //   (1) free URL pre-check BEFORE any API call (no credits, dodges rate limits)
 //   (2) authoritative backstop AFTER metadata, BEFORE the costly transcript call
-// An incomplete prior fetch (_transcript_state empty/error) is NOT a duplicate —
+// An incomplete prior fetch (_transcript_state error) is NOT a duplicate —
+// an old clean-empty fetch ("empty") or current clean-empty fetch ("empty-no-speech") is complete.
 // it re-fetches to finish. Pass --force to re-fetch deliberately (bills credits).
 //
 // Usage:  node social-fetch.mjs <url> [--brain <dir>] [--force] [--api-key-stdin]
@@ -50,7 +51,7 @@ if (!url) { console.error('Usage: node social-fetch.mjs <url> [--brain <dir>] [-
 // ---- dedup (deterministic, keyed by the post's canonical shortcode/id) ----
 const socialDir = path.join(brain, 'sources', 'social');
 const sanitizeId = (s) => String(s).replace(/[^A-Za-z0-9._-]/g, '_');
-function existingOkFile(dir, id) {
+function existingCompleteFile(dir, id) {
   if (!id) return null;
   const want = String(id).replace(/[^A-Za-z0-9._-]/g, '_');
   try {
@@ -58,7 +59,7 @@ function existingOkFile(dir, id) {
       if (!fileName.endsWith(`-${want}.txt`)) continue;
       const candidate = path.join(dir, fileName);
       const head = fs.readFileSync(candidate, 'utf8').slice(0, 4000);
-      return /^_transcript_state:\s*"ok"/m.test(head) ? candidate : null;
+      return /^_transcript_state:\s*"(ok|empty-no-speech|empty)"/m.test(head) ? candidate : null;
     }
   } catch {
     return null;
@@ -114,11 +115,11 @@ function parseApiKeys(raw) {
 }
 function skipIfDuplicate(id, stage) {
   if (force) return;
-  const hit = existingOkFile(socialDir, id);
+  const hit = existingCompleteFile(socialDir, id);
   if (!hit) return;
   console.log(hit); // path, for the caller — same stdout contract as a fresh write
   console.error(`[social-fetch] ALREADY INGESTED (${stage}) — ${hit}`);
-  console.error('[social-fetch] Skipped: this post already has a complete transcript on disk. Re-run with --force to re-fetch (bills credits). Surface to Elliot — do NOT silently re-file a duplicate concept page.');
+  console.error('[social-fetch] Skipped: this post already has a completed transcript decision on disk. Re-run with --force to re-fetch (bills credits). Surface to Elliot — do NOT silently re-file a duplicate concept page.');
   process.exit(0);
 }
 // GATE 1 — canonicalize the URL (handles share/short links via a FREE redirect
@@ -203,9 +204,13 @@ fs.mkdirSync(dir, { recursive: true });
 const file = path.join(dir, `${platform}-${id}.txt`); // .txt = not ingested by sync (disk-only provenance)
 
 const timestamped = t.state === 'ok' && hasTimestamps(t.segments);
+const timestampsUnavailable = t.state === 'ok' && !timestamped;
+const timestampsUnavailableReason = timestampsUnavailable
+  ? `${t.provider || 'transcript provider'} returned transcript segments without offsets`
+  : null;
 const transcriptBlock = t.state === 'ok'
   ? renderTimestamped(t.segments)
-  : t.state === 'empty'
+  : t.state === 'empty-no-speech'
     ? '_(no transcript available — clean response, no captions/audio)_'
     : `_(TRANSCRIPT ERROR — ${t.error})_`;
 const transcriptHeading = timestamped ? '## Transcript (timestamped)' : '## Transcript';
@@ -220,6 +225,8 @@ const front = {
   _transcript_provider: t.provider || 'scrapecreators',
   _transcript_state: t.state,
   _transcript_timestamped: timestamped,
+  _transcript_timestamps_unavailable: timestampsUnavailable,
+  _transcript_timestamps_unavailable_reason: timestampsUnavailableReason,
 };
 const fm = Object.entries(front).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
 
@@ -250,7 +257,7 @@ if (t.state === 'error') {
   console.error(SURFACE);
   process.exit(4);
 }
-if (t.state === 'empty') {
+if (t.state === 'empty-no-speech') {
   console.error(`[social-fetch] wrote ${file} — NO transcript available (no captions/audio). Flagging so you can decide whether to proceed.`);
   process.exit(0);
 }

@@ -325,13 +325,13 @@ function normalizeInstagramTranscript(body) {
       .filter((item) => item.text)
     : [];
   const text = plainOf(segments);
-  return { state: text ? 'ok' : 'empty', text, segments, error: null };
+  return { state: text ? 'ok' : 'empty-no-speech', text, segments, error: null };
 }
 
 function normalizeTikTokTranscript(body) {
   const segments = parseWebVtt(body?.transcript || '');
   const text = plainOf(segments);
-  return { state: text ? 'ok' : 'empty', text, segments, error: null };
+  return { state: text ? 'ok' : 'empty-no-speech', text, segments, error: null };
 }
 
 function normalizeYouTubeTranscript(body) {
@@ -341,13 +341,13 @@ function normalizeYouTubeTranscript(body) {
       .map((item) => ({ text: String(item.text).trim(), offset: item.startMs != null ? Number(item.startMs) : null }))
     : [];
   const text = firstDefined(body?.transcript_only_text, plainOf(segments)) || '';
-  return { state: text ? 'ok' : 'empty', text: text.trim(), segments, error: null };
+  return { state: text ? 'ok' : 'empty-no-speech', text: text.trim(), segments, error: null };
 }
 
 function normalizePlainTranscript(body) {
   const text = String(body?.transcript || '').trim();
   const segments = text ? [{ text, offset: null }] : [];
-  return { state: text ? 'ok' : 'empty', text, segments, error: null };
+  return { state: text ? 'ok' : 'empty-no-speech', text, segments, error: null };
 }
 
 function normalizeTranscript(platform, body) {
@@ -394,7 +394,7 @@ function normalizeThreadReaderTranscript(html) {
     segments.push({ text, offset: null });
   }
   const text = segments.map((segment) => segment.text).join('\n\n').trim();
-  return { state: text ? 'ok' : 'empty', text, segments, error: null };
+  return { state: text ? 'ok' : 'empty-no-speech', text, segments, error: null };
 }
 
 async function getThreadReaderTranscript(postId) {
@@ -466,7 +466,7 @@ async function getSupadataTranscript(apiKey, url) {
   if (first.status === 200) {
     const segments = supadataSegmentsOf(first.body);
     const text = plainOf(segments);
-    return { state: text ? 'ok' : 'empty', text, segments, error: null, provider: 'supadata', fallbackUsed: true };
+    return { state: text ? 'ok' : 'empty-no-speech', text, segments, error: null, provider: 'supadata', fallbackUsed: true };
   }
   if (first.status === 202 && first.body?.jobId) {
     const deadline = Date.now() + 120_000;
@@ -485,7 +485,7 @@ async function getSupadataTranscript(apiKey, url) {
         const resultBody = polled.body?.result || polled.body;
         const segments = supadataSegmentsOf(resultBody);
         const text = plainOf(segments);
-        return { state: text ? 'ok' : 'empty', text, segments, error: null, provider: 'supadata', fallbackUsed: true };
+        return { state: text ? 'ok' : 'empty-no-speech', text, segments, error: null, provider: 'supadata', fallbackUsed: true };
       }
       if (polled.body?.status === 'failed') {
         return { state: 'error', text: '', segments: [], error: `transcript job failed: ${JSON.stringify(polled.body)}`, provider: 'supadata', fallbackUsed: true };
@@ -532,7 +532,7 @@ export async function getTranscript(apiKeys, platform, url, { durationSeconds = 
   const first = await getWithRetry(apiKeys.scrapeCreatorsApiKey, routes.transcript, { url }, 'transcript request');
   if (first.status === 200) {
     const normalized = normalizeTranscript(platform, first.body);
-    if (platform === 'x' && normalized.state === 'empty' && postId) {
+    if (platform === 'x' && normalized.state === 'empty-no-speech' && postId) {
       const fallback = await getThreadReaderTranscript(postId);
       if (fallback.state === 'ok') {
         return {
