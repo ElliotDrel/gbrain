@@ -59,6 +59,10 @@ they building, what makes them tick, where are they headed.
 
 When sources conflict, note the contradiction with both citations.
 
+## Entity Neutrality (MANDATORY)
+
+`people/` and `companies/` pages are factual records about the entity, not about Elliot's relationship to an idea. Do not add a "Why He/She/It Matters to Elliot", "Why I Saved This", or any personal-relevance/motive section to an entity page, and do not assert Elliot's intent, goals, or that he "wants to" adopt something unless he explicitly said so with a source. The `Relationship` field is for a real, known relationship only -- never a projected or aspirational one. For an entity Elliot only read ABOUT in media, keep it neutral and mark it reference per `skills/conventions/reference-entities.md`. If Elliot explicitly gave a reason for caring, it belongs on the concept/source page as `## Why I Saved This` with the source of his statement -- never on the entity page. (Mirrors media-ingest hard guardrails 1 and 7.)
+
 ## When To Enrich
 
 ### Primary triggers
