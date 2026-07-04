@@ -359,7 +359,7 @@ function normalizeTranscript(platform, body) {
     case 'facebook':
       return normalizePlainTranscript(body);
     default:
-      return { state: 'error', text: '', segments: [], error: `unsupported platform: ${platform}` };
+      return { state: 'empty-error', text: '', segments: [], error: `unsupported platform: ${platform}` };
   }
 }
 
@@ -398,12 +398,12 @@ function normalizeThreadReaderTranscript(html) {
 }
 
 async function getThreadReaderTranscript(postId) {
-  if (!postId) return { state: 'error', text: '', segments: [], error: 'missing x post id', provider: 'threadreader', fallbackUsed: true };
+  if (!postId) return { state: 'empty-error', text: '', segments: [], error: 'missing x post id', provider: 'threadreader', fallbackUsed: true };
   const res = await fetch(`${THREAD_READER_BASE}/${encodeURIComponent(postId)}.html`);
   const html = await res.text();
   if (!res.ok) {
     return {
-      state: 'error',
+      state: 'empty-error',
       text: '',
       segments: [],
       error: `HTTP ${res.status}: ${html.slice(0, 200).trim() || 'empty body'}`,
@@ -416,7 +416,7 @@ async function getThreadReaderTranscript(postId) {
     return { ...normalized, provider: 'threadreader', fallbackUsed: true };
   }
   return {
-    state: 'error',
+    state: 'empty-error',
     text: '',
     segments: [],
     error: 'Thread Reader page did not expose tweet blocks',
@@ -479,7 +479,7 @@ async function getSupadataTranscript(apiKey, url) {
         'transcript job poll',
       );
       if (polled.status !== 200) {
-        return { state: 'error', text: '', segments: [], error: `job poll HTTP ${polled.status}: ${JSON.stringify(polled.body)}`, provider: 'supadata', fallbackUsed: true };
+        return { state: 'empty-error', text: '', segments: [], error: `job poll HTTP ${polled.status}: ${JSON.stringify(polled.body)}`, provider: 'supadata', fallbackUsed: true };
       }
       if (polled.body?.status === 'completed') {
         const resultBody = polled.body?.result || polled.body;
@@ -488,17 +488,17 @@ async function getSupadataTranscript(apiKey, url) {
         return { state: text ? 'ok' : 'empty-no-speech', text, segments, error: null, provider: 'supadata', fallbackUsed: true };
       }
       if (polled.body?.status === 'failed') {
-        return { state: 'error', text: '', segments: [], error: `transcript job failed: ${JSON.stringify(polled.body)}`, provider: 'supadata', fallbackUsed: true };
+        return { state: 'empty-error', text: '', segments: [], error: `transcript job failed: ${JSON.stringify(polled.body)}`, provider: 'supadata', fallbackUsed: true };
       }
     }
-    return { state: 'error', text: '', segments: [], error: 'transcript job timed out after 120s', provider: 'supadata', fallbackUsed: true };
+    return { state: 'empty-error', text: '', segments: [], error: 'transcript job timed out after 120s', provider: 'supadata', fallbackUsed: true };
   }
-  return { state: 'error', text: '', segments: [], error: `HTTP ${first.status}: ${JSON.stringify(first.body)}`, provider: 'supadata', fallbackUsed: true };
+  return { state: 'empty-error', text: '', segments: [], error: `HTTP ${first.status}: ${JSON.stringify(first.body)}`, provider: 'supadata', fallbackUsed: true };
 }
 
 function shouldFallbackToSupadata({ durationSeconds, transcriptState, supadataApiKey }) {
   void durationSeconds;
-  return transcriptState === 'error' && !!supadataApiKey;
+  return transcriptState === 'empty-error' && !!supadataApiKey;
 }
 
 function platformName(platform) {
@@ -528,7 +528,7 @@ export async function getMetadata(apiKeys, platform, url) {
 
 export async function getTranscript(apiKeys, platform, url, { durationSeconds = null, postId = null } = {}) {
   const routes = routesFor(platform);
-  if (!routes) return { state: 'error', text: '', segments: [], error: `unsupported platform: ${platform}`, provider: 'scrapecreators', fallbackUsed: false };
+  if (!routes) return { state: 'empty-error', text: '', segments: [], error: `unsupported platform: ${platform}`, provider: 'scrapecreators', fallbackUsed: false };
   const first = await getWithRetry(apiKeys.scrapeCreatorsApiKey, routes.transcript, { url }, 'transcript request');
   if (first.status === 200) {
     const normalized = normalizeTranscript(platform, first.body);
@@ -560,7 +560,7 @@ export async function getTranscript(apiKeys, platform, url, { durationSeconds = 
     const durationNote = Number.isFinite(durationSeconds) ? ` for ${Math.round(durationSeconds)}s video` : '';
     console.error(`[social-fetch] ScrapeCreators transcript failed${durationNote}; trying Supadata fallback.`);
     const fallback = await getSupadataTranscript(apiKeys.supadataApiKey, url);
-    if (fallback.state === 'error') {
+    if (fallback.state === 'empty-error') {
       return {
         ...fallback,
         error: `ScrapeCreators failed first: ${scrapeError}; Supadata fallback failed: ${fallback.error}`,
@@ -575,5 +575,5 @@ export async function getTranscript(apiKeys, platform, url, { durationSeconds = 
   const suffix = !apiKeys.supadataApiKey
     ? '; Supadata fallback unavailable (no SUPADATA_API_KEY)'
     : '';
-  return { state: 'error', text: '', segments: [], error: `${scrapeError}${suffix}`, provider: 'scrapecreators', fallbackUsed: false };
+  return { state: 'empty-error', text: '', segments: [], error: `${scrapeError}${suffix}`, provider: 'scrapecreators', fallbackUsed: false };
 }

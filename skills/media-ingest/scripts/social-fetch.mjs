@@ -21,7 +21,7 @@
 // post we already have a COMPLETE transcript for — two gates:
 //   (1) free URL pre-check BEFORE any API call (no credits, dodges rate limits)
 //   (2) authoritative backstop AFTER metadata, BEFORE the costly transcript call
-// An incomplete prior fetch (_transcript_state error) is NOT a duplicate —
+// An incomplete prior fetch (_transcript_state empty-error) is NOT a duplicate —
 // an old clean-empty fetch ("empty") or current clean-empty fetch ("empty-no-speech") is complete.
 // it re-fetches to finish. Pass --force to re-fetch deliberately (bills credits).
 //
@@ -212,7 +212,7 @@ const transcriptBlock = t.state === 'ok'
   ? renderTimestamped(t.segments)
   : t.state === 'empty-no-speech'
     ? '_(no transcript available — clean response, no captions/audio)_'
-    : `_(TRANSCRIPT ERROR — ${t.error})_`;
+    : `_(TRANSCRIPT FETCH ERROR — ${t.error})_`;
 const transcriptHeading = timestamped ? '## Transcript (timestamped)' : '## Transcript';
 
 const front = {
@@ -251,9 +251,9 @@ ${transcriptBlock}
 fs.writeFileSync(file, out, 'utf8');
 console.log(file); // path, for the caller
 
-if (t.state === 'error') {
+if (t.state === 'empty-error') {
   console.error(`[social-fetch] TRANSCRIPT ERROR — ${t.error}`);
-  console.error(`[social-fetch] Metadata was saved to ${file}, but the transcript failed. Do NOT build the concept page yet.`);
+  console.error(`[social-fetch] Metadata was saved to ${file} with _transcript_state=\"empty-error\". Do NOT build the concept page yet.`);
   console.error(SURFACE);
   process.exit(4);
 }

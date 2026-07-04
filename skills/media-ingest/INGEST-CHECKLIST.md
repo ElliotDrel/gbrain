@@ -60,6 +60,6 @@ Two independent decisions: **(A) create a page?** = notability. **(B) back-link?
 - Page on disk but not retrievable from engine (F1), or uncommitted (F2).
 
 ## Auto-OK (NOT flags)
-- Raw with `_transcript_state` = empty/error/404/trivial and no page (auto-legit non-ingestable).
+- Raw with `_transcript_state` = empty/404/trivial and no page, or `empty-error` waiting on refetch, and no page.
 - Missing `## Why I Saved This` (E2).
 - A `sources/` page (vs `concepts/`) — both are valid homes.
