@@ -20,13 +20,20 @@
  *                                                       by default; --apply
  *                                                       writes frontmatter AND
  *                                                       reconciles the engine.
+ *   gbrain tags apply-aliases --aliases-file FILE
+ *                            [--apply] [--brain DIR]   Apply approved semantic
+ *                                                       alias pairs from a file.
+ *                                                       Dry-run by default;
+ *                                                       --apply writes
+ *                                                       frontmatter AND
+ *                                                       reconciles the engine.
  *
  * Deterministic mechanics only. Semantic synonyms (e.g. deep-work vs
  * flow-state) are NOT auto-detected — an LLM reviews `list` output for those
  * and calls `merge` on the ones it (and the user) confirm.
  */
 
-import { readFileSync, writeFileSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { join, relative } from 'path';
 import { execSync } from 'child_process';
 import { loadConfig, toEngineConfig } from '../core/config.ts';
@@ -146,6 +153,11 @@ interface AuditCluster {
   counts: Record<string, number>;
 }
 
+interface AliasPair {
+  from: string;
+  to: string;
+}
+
 function auditClusters(brain: string): AuditCluster[] {
   const counts = tagCounts(brain);
   const tags = [...counts.keys()];
@@ -193,8 +205,57 @@ async function connectEngine(): Promise<BrainEngine> {
   return engine;
 }
 
+export function parseAliasPairs(text: string): AliasPair[] {
+  const pairs: AliasPair[] = [];
+  const seen = new Set<string>();
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line.startsWith('-')) continue;
+    const match = line.match(/^- +`([^`]+)` +-> +`([^`]+)`/);
+    if (!match) continue;
+    const from = match[1].trim();
+    const to = match[2].trim();
+    if (!from || !to || from === to) continue;
+    const key = `${from}\u0000${to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push({ from, to });
+  }
+  return pairs;
+}
+
+async function applyMerge(brain: string, from: string, to: string, apply: boolean): Promise<string[]> {
+  const changed: string[] = [];
+  for (const f of pages(brain)) {
+    const tags = readTags(f);
+    if (!tags.includes(from)) continue;
+    const next: string[] = [];
+    for (const t of tags) {
+      const v = t === from ? to : t;
+      if (!next.includes(v)) next.push(v);
+    }
+    if (apply) writeTags(f, next);
+    changed.push(relative(brain, f).replace(/\.md$/, ''));
+  }
+
+  if (apply && changed.length) {
+    let engine: BrainEngine | null = null;
+    try {
+      engine = await connectEngine();
+      for (const slug of changed) {
+        try { await engine.removeTag(slug, from); } catch { /* page may not be in engine */ }
+        try { await engine.addTag(slug, to); } catch { /* idem */ }
+      }
+    } finally {
+      if (engine) await engine.disconnect();
+    }
+  }
+
+  return changed;
+}
+
 function printHelp(): void {
-  console.log(`Usage: gbrain tags <list|audit|merge> [options]
+  console.log(`Usage: gbrain tags <list|audit|merge|apply-aliases> [options]
 
 Tag-vocabulary hygiene. Keeps tags tight so pages connect instead of
 fragmenting into synonyms.
@@ -208,9 +269,13 @@ Subcommands:
   merge <from> <to>          Repoint every page using <from> to <to>.
                              Dry-run by default; --apply writes frontmatter AND
                              reconciles the engine (removeTag + addTag).
+  apply-aliases              Read approved alias pairs from a file and apply
+                             them in order. Requires --aliases-file.
 
 Options:
   --brain <dir>              Brain directory (default: current directory)
+  --aliases-file <path>      Markdown file containing alias lines like
+                             \`- \`from\` -> \`to\`\`
   --json                     Machine-readable output (list, audit)
   --apply                    Actually write (merge); omit for dry-run
 
@@ -226,9 +291,9 @@ export async function runTags(args: string[]): Promise<void> {
     return i >= 0 ? args[i + 1] ?? null : null;
   };
 
-  if (!sub || sub === '--help' || sub === '-h' || !['list', 'audit', 'merge'].includes(sub)) {
+  if (!sub || sub === '--help' || sub === '-h' || !['list', 'audit', 'merge', 'apply-aliases'].includes(sub)) {
     printHelp();
-    process.exit(sub && !['list', 'audit', 'merge'].includes(sub) ? 1 : 0);
+    process.exit(sub && !['list', 'audit', 'merge', 'apply-aliases'].includes(sub) ? 1 : 0);
   }
 
   const brain = flag('--brain') || '.';
@@ -269,6 +334,42 @@ export async function runTags(args: string[]): Promise<void> {
     return;
   }
 
+  if (sub === 'apply-aliases') {
+    const aliasesFile = flag('--aliases-file');
+    const apply = has('--apply');
+    if (!aliasesFile) {
+      console.error('Usage: gbrain tags apply-aliases --aliases-file <path> [--apply] [--brain <dir>] [--json]');
+      process.exit(1);
+    }
+    if (!existsSync(aliasesFile)) {
+      console.error(`Aliases file not found: ${aliasesFile}`);
+      process.exit(1);
+    }
+    const aliases = parseAliasPairs(readFileSync(aliasesFile, 'utf8'));
+    const results: Array<{ from: string; to: string; pages: string[] }> = [];
+    for (const { from, to } of aliases) {
+      const pagesChanged = await applyMerge(brain, from, to, apply);
+      results.push({ from, to, pages: pagesChanged });
+    }
+    if (asJson) {
+      console.log(JSON.stringify(results));
+      return;
+    }
+    console.log(`# ${apply ? 'Applied' : 'Would apply'} ${results.length} approved alias pair(s)\n`);
+    for (const result of results) {
+      console.log(`${apply ? 'Merged' : 'Would merge'} "${result.from}" → "${result.to}" in ${result.pages.length} page(s):`);
+      if (result.pages.length) result.pages.forEach(page => console.log('  ' + page));
+      else console.log('  (already clean)');
+      console.log('');
+    }
+    if (apply && results.some(result => result.pages.length)) {
+      console.log('Engine reconciled for changed aliases. Next: commit + push the frontmatter changes.');
+    } else if (!apply && results.some(result => result.pages.length)) {
+      console.log('(dry-run — re-run with --apply to write)');
+    }
+    return;
+  }
+
   // merge
   const from = args[1];
   const to = args[2];
@@ -278,34 +379,7 @@ export async function runTags(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // First pass (filesystem): rewrite frontmatter, collect affected slugs.
-  const changed: string[] = [];
-  for (const f of pages(brain)) {
-    const tags = readTags(f);
-    if (!tags.includes(from)) continue;
-    const next: string[] = [];
-    for (const t of tags) {
-      const v = t === from ? to : t;
-      if (!next.includes(v)) next.push(v);
-    }
-    if (apply) writeTags(f, next); // disk = source of truth for future syncs
-    changed.push(relative(brain, f).replace(/\.md$/, ''));
-  }
-
-  // Second pass (engine): reconcile in-process. sync only ADDS tags, so the
-  // old tag must be removed explicitly; addTag is idempotent.
-  if (apply && changed.length) {
-    let engine: BrainEngine | null = null;
-    try {
-      engine = await connectEngine();
-      for (const slug of changed) {
-        try { await engine.removeTag(slug, from); } catch { /* page may not be in engine */ }
-        try { await engine.addTag(slug, to); } catch { /* idem */ }
-      }
-    } finally {
-      if (engine) await engine.disconnect();
-    }
-  }
+  const changed = await applyMerge(brain, from, to, apply);
 
   console.log(`${apply ? 'Merged' : 'Would merge'} "${from}" → "${to}" in ${changed.length} page(s):`);
   changed.forEach(c => console.log('  ' + c));
