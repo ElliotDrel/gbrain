@@ -29,6 +29,11 @@ MUST follow this.
   (`removeTag` + `addTag`), because `gbrain sync` only ADDS tags and never
   removes them. After `--apply`, just commit + push the frontmatter changes — no
   separate `gbrain sync` is needed for the tag move.
+- Elliot-approved semantic aliases live in
+  `skills/conventions/tag-semantic-aliases.md`. Those pairs are no longer
+  review items; auto-apply them with the real code path:
+  `gbrain tags apply-aliases --aliases-file /home/supe/gbrain/skills/conventions/tag-semantic-aliases.md --apply --brain /home/supe/brain`
+  before any fresh semantic review.
 - **Semantic** synonyms (same idea, different word — e.g. `deep-work` vs
   `flow-state`) are NOT machine-detectable. They require reading `list` output
   with judgment. When merging semantic dupes, FLAG the proposed merge to the user
