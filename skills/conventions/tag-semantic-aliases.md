@@ -2,7 +2,7 @@
 
 These are Elliot-approved semantic merges. They are no longer review items.
 When any of these pairs appear, apply them deterministically with
-`gbrain tags merge <from> <to> --apply --brain /home/supe/brain`.
+`gbrain tags apply-aliases --aliases-file <this file> --apply`.
 
 ## Standing approved aliases
 
